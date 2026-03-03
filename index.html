@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEXUS — Stream Engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg0:#050507;--bg1:#09090d;--bg2:#0d0d12;--bg3:#111118;--line:#1c1c28;--line2:#262634;--amber:#e8a830;--amber2:#c4881a;--green:#3ddc84;--red:#ff4757;--muted:#5a5a78;--dim:#3a3a50;--text:#c8c8e0;--text2:#888898;--mono:'IBM Plex Mono',monospace;--dm:'DM Mono',monospace;--syne:'Syne',sans-serif}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:var(--bg0);color:var(--text);font-family:var(--dm);font-size:13px;overflow:hidden}
+.shell{display:grid;grid-template-rows:42px 1fr;grid-template-columns:210px 1fr 280px;height:100vh}
+.topbar{grid-column:1/-1;background:var(--bg1);border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 14px;gap:0;position:relative}
+.topbar::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent 0%,var(--amber2) 30%,var(--amber2) 70%,transparent 100%);opacity:.25}
+.brand{font-family:var(--syne);font-size:17px;font-weight:800;letter-spacing:5px;color:var(--amber);text-shadow:0 0 24px rgba(232,168,48,.35);padding-right:20px;border-right:1px solid var(--line2);margin-right:14px;white-space:nowrap;user-select:none}
+.machine-pill{display:flex;align-items:center;gap:7px;padding:3px 11px;border:1px solid var(--line2);border-radius:2px;background:var(--bg2);font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:1.5px;cursor:pointer;transition:border-color .15s;user-select:none}
+.machine-pill:hover{border-color:var(--amber2)}.machine-pill.on{color:var(--amber);border-color:var(--amber2);background:rgba(232,168,48,.06)}.machine-pill.on .led{background:var(--amber);box-shadow:0 0 8px var(--amber);animation:blink 2s infinite}
+.led{width:6px;height:6px;border-radius:50%;background:var(--dim);flex-shrink:0;transition:background .3s}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.nav{display:flex;margin-left:16px}
+.nav-item{background:none;border:none;color:var(--muted);font-family:var(--mono);font-size:10px;letter-spacing:2px;text-transform:uppercase;padding:0 13px;height:42px;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s}
+.nav-item:hover{color:var(--text2)}.nav-item.active{color:var(--amber);border-bottom-color:var(--amber)}
+.topbar-right{margin-left:auto;display:flex;gap:7px}
+.sidebar{background:var(--bg1);border-right:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden}
+.sb-group{border-bottom:1px solid var(--line);flex-shrink:0}
+.sb-head{display:flex;align-items:center;justify-content:space-between;padding:7px 11px;font-family:var(--mono);font-size:9px;letter-spacing:2.5px;color:var(--dim);text-transform:uppercase;user-select:none}
+.sb-count{background:var(--bg3);border:1px solid var(--line2);color:var(--amber2);font-size:9px;padding:1px 5px;border-radius:1px}
+.sb-list{overflow-y:auto;max-height:160px}
+.sb-item{display:flex;align-items:center;gap:6px;padding:5px 11px 5px 14px;cursor:pointer;border-left:2px solid transparent;transition:all .1s}
+.sb-item:hover{background:rgba(232,168,48,.04);border-left-color:var(--line2)}
+.sb-dot{width:5px;height:5px;border-radius:50%;background:var(--dim);flex-shrink:0}
+.sb-dot.running{background:var(--green);animation:blink 2s infinite}.sb-dot.crashed,.sb-dot.error{background:var(--red)}.sb-dot.loading,.sb-dot.extracting{background:var(--amber);animation:blink 1s infinite}.sb-dot.retrying{background:var(--amber2);animation:blink .6s infinite}
+.sb-label{flex:1;font-size:11px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-st{font-family:var(--mono);font-size:9px;color:var(--dim)}
+.sb-add{width:100%;background:none;border:none;border-top:1px solid var(--line);color:var(--dim);font-family:var(--mono);font-size:9px;letter-spacing:1.5px;padding:6px;cursor:pointer;transition:color .15s}
+.sb-add:hover{color:var(--amber);background:rgba(232,168,48,.04)}
+.sb-group.grow{flex:1;display:flex;flex-direction:column;overflow:hidden}.sb-group.grow .sb-list{flex:1;max-height:none}
+.main{overflow-y:auto;padding:16px;background:var(--bg0)}
+.rpanel{background:var(--bg1);border-left:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden}
+.rpanel-tabs{display:flex;border-bottom:1px solid var(--line);flex-shrink:0}
+.rpanel-tab{flex:1;background:none;border:none;color:var(--muted);font-family:var(--mono);font-size:9px;letter-spacing:2px;padding:8px 4px;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s}
+.rpanel-tab:hover{color:var(--text2)}.rpanel-tab.active{color:var(--amber);border-bottom-color:var(--amber)}
+.rpanel-body{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.console{flex:1;overflow-y:auto;padding:8px 6px;font-family:var(--mono);font-size:10px;line-height:1.65}
+.cl{padding:1px 4px;border-radius:1px}.cl:hover{background:rgba(255,255,255,.03)}
+.cl.e{color:var(--red)}.cl.w{color:var(--amber2)}.cl.g{color:var(--green)}.cl.f{color:var(--dim)}.cl.i{color:var(--muted)}
+.vnc-bar{padding:6px 10px;background:var(--bg2);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:9px;color:var(--muted);flex-shrink:0}
+.page{display:none}.page.active{display:block}
+.ph{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.ph-title{font-family:var(--syne);font-size:12px;font-weight:700;letter-spacing:4px;color:var(--amber);text-transform:uppercase}
+.ph-line{flex:1;height:1px;background:linear-gradient(90deg,var(--line2),transparent)}
+.machine-status{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+.stat-box{background:var(--bg2);border:1px solid var(--line);padding:11px 14px;border-radius:2px}
+.stat-v{font-family:var(--syne);font-size:22px;font-weight:800;color:var(--amber);text-shadow:0 0 20px rgba(232,168,48,.3);line-height:1}
+.stat-k{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:2px;margin-top:5px}
+.section-card{background:var(--bg2);border:1px solid var(--line);border-radius:2px;margin-bottom:10px}
+.sc-head{display:flex;align-items:center;gap:8px;padding:9px 13px;cursor:pointer;border-bottom:1px solid var(--line);user-select:none}
+.sc-head:hover{background:rgba(255,255,255,.02)}
+.sc-title{flex:1;font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--text2);text-transform:uppercase}
+.sc-body{padding:13px;display:none}.sc-body.open{display:block}
+.fp-table{display:grid;grid-template-columns:110px 1fr;gap:5px 10px;font-family:var(--mono);font-size:10px}
+.fp-k{color:var(--dim)}.fp-v{color:var(--amber2);word-break:break-all}
+.tab-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:10px}
+.tab-card{background:var(--bg2);border:1px solid var(--line);border-radius:2px;overflow:hidden;transition:border-color .2s}
+.tab-card:hover{border-color:var(--line2)}.tab-card.running{border-color:rgba(61,220,132,.2)}.tab-card.crashed{border-color:rgba(255,71,87,.2)}
+.tab-card-top{display:flex;align-items:center;gap:7px;padding:9px 11px;background:var(--bg3);border-bottom:1px solid var(--line)}
+.tc-name{flex:1;font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badge{display:inline-flex;align-items:center;font-family:var(--mono);font-size:9px;padding:2px 7px;border:1px solid var(--line2);border-radius:1px;color:var(--muted);letter-spacing:1px;white-space:nowrap}
+.badge.on{border-color:var(--green);color:var(--green);background:rgba(61,220,132,.06)}.badge.err{border-color:var(--red);color:var(--red)}.badge.ld{border-color:var(--amber);color:var(--amber)}.badge.ret{border-color:var(--amber2);color:var(--amber2)}
+.tab-preview{height:130px;background:#000;position:relative;overflow:hidden;cursor:pointer}
+.tab-preview video{width:100%;height:100%;object-fit:cover}
+.nosig{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;background:repeating-linear-gradient(45deg,#080808,#080808 2px,#0d0d0d 2px,#0d0d0d 4px)}
+.nosig-txt{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:3px}
+.preview-live{position:absolute;top:7px;right:7px;display:flex;align-items:center;gap:4px;background:rgba(0,0,0,.7);padding:2px 7px;font-family:var(--mono);font-size:9px;color:var(--green);letter-spacing:2px;border:1px solid rgba(61,220,132,.3)}
+.live-dot{width:5px;height:5px;border-radius:50%;background:var(--green);animation:blink 1.5s infinite}
+.tab-body{padding:9px 11px}
+.tab-url{font-family:var(--mono);font-size:9px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:8px}
+.tab-cred{font-family:var(--mono);font-size:9px;color:var(--amber2);margin-bottom:7px;letter-spacing:1px}
+.row{display:flex;gap:5px;flex-wrap:wrap}
+.tbl{width:100%;border-collapse:collapse;font-size:11px}
+.tbl th{font-family:var(--mono);font-size:9px;letter-spacing:2px;color:var(--dim);text-align:left;padding:7px 10px;border-bottom:1px solid var(--line2);white-space:nowrap}
+.tbl td{padding:8px 10px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:10px;color:var(--text);vertical-align:middle}
+.tbl tr:hover td{background:rgba(255,255,255,.02)}
+.vault-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:9px}
+.vault-card{background:var(--bg2);border:1px solid var(--line);border-radius:2px;padding:13px;transition:border-color .15s;position:relative;overflow:hidden}
+.vault-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--amber2)}
+.vault-card:hover{border-color:var(--amber2)}
+.vc-domain{font-family:var(--syne);font-size:13px;font-weight:700;color:var(--amber);letter-spacing:2px;margin-bottom:10px;padding-left:6px}
+.vc-row{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;color:var(--text2);margin-bottom:4px;padding-left:6px}
+.vc-k{color:var(--dim);min-width:72px}
+.stream-card{background:var(--bg2);border:1px solid var(--line);border-radius:2px;margin-bottom:9px;transition:border-color .2s}
+.stream-card:hover{border-color:var(--line2)}.stream-card.running{border-color:rgba(61,220,132,.2)}
+.sc2-head{display:flex;align-items:center;gap:8px;padding:9px 13px;cursor:pointer;user-select:none}
+.sc2-name{flex:1;font-size:12px;font-weight:500}
+.sc2-src{font-family:var(--mono);font-size:9px;color:var(--dim);padding:0 13px 9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sc2-body{padding:10px 13px;border-top:1px solid var(--line);display:none}.sc2-body.open{display:block}
+.btn{display:inline-flex;align-items:center;gap:5px;background:none;border:1px solid var(--line2);color:var(--text2);font-family:var(--mono);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;padding:5px 12px;cursor:pointer;border-radius:1px;transition:all .15s;white-space:nowrap}
+.btn:hover{background:rgba(255,255,255,.05);border-color:var(--muted)}
+.btn-a{border-color:var(--amber2);color:var(--amber)}.btn-a:hover{background:rgba(232,168,48,.1)}
+.btn-g{border-color:rgba(61,220,132,.4);color:var(--green)}.btn-g:hover{background:rgba(61,220,132,.08)}
+.btn-r{border-color:rgba(255,71,87,.4);color:var(--red)}.btn-r:hover{background:rgba(255,71,87,.08)}
+.btn-s{font-size:9px;padding:3px 8px}.btn-xs{font-size:9px;padding:2px 6px}
+.fg{display:flex;flex-direction:column;gap:4px}.fg.s2{grid-column:1/-1}
+.fl{font-family:var(--mono);font-size:9px;color:var(--dim);letter-spacing:1.5px;text-transform:uppercase}
+.fi{background:var(--bg0);border:1px solid var(--line2);color:var(--text);font-family:var(--mono);font-size:11px;padding:6px 9px;border-radius:1px;outline:none;width:100%;transition:border-color .15s}
+.fi:focus{border-color:var(--amber2)}.fi::placeholder{color:var(--dim)}
+select.fi option{background:var(--bg2)}
+.fg2{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:11px}
+.fg3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;margin-top:11px}
+.fg1{display:grid;grid-template-columns:1fr;gap:9px;margin-top:11px}
+.divl{height:1px;background:var(--line);margin:12px 0}
+.toggle-row{display:flex;align-items:center;gap:9px;padding:5px 0}
+.tog{position:relative;width:32px;height:16px;flex-shrink:0}
+.tog input{opacity:0;width:0;height:0}
+.tog-sl{position:absolute;inset:0;background:var(--bg0);border:1px solid var(--line2);border-radius:8px;cursor:pointer;transition:.2s}
+.tog-sl::before{content:'';position:absolute;width:10px;height:10px;left:2px;top:2px;background:var(--dim);border-radius:50%;transition:.2s}
+.tog input:checked + .tog-sl{border-color:var(--amber2);background:rgba(196,136,26,.15)}
+.tog input:checked + .tog-sl::before{transform:translateX(16px);background:var(--amber)}
+.tog-lbl{font-size:11px;color:var(--text2);font-family:var(--dm)}
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(4px);z-index:1000;align-items:center;justify-content:center}
+.overlay.open{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--line2);border-radius:3px;width:520px;max-width:96vw;max-height:92vh;overflow-y:auto;box-shadow:0 0 80px rgba(0,0,0,.9)}
+.mh{display:flex;align-items:center;justify-content:space-between;padding:13px 17px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg2);z-index:1}
+.mh-title{font-family:var(--syne);font-size:12px;font-weight:700;letter-spacing:4px;color:var(--amber)}
+.mh-close{background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:2px 6px;transition:color .15s}
+.mh-close:hover{color:var(--text)}
+.mb{padding:16px}
+.mf{padding:12px 17px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:7px;background:var(--bg2)}
+#toast{position:fixed;bottom:18px;right:18px;z-index:9998;display:flex;flex-direction:column;gap:5px;pointer-events:none}
+.ti{padding:7px 14px;font-family:var(--mono);font-size:10px;border:1px solid;border-radius:1px;letter-spacing:1px;animation:tslide .2s ease}
+.ti.ok{background:rgba(61,220,132,.08);border-color:var(--green);color:var(--green)}
+.ti.err{background:rgba(255,71,87,.08);border-color:var(--red);color:var(--red)}
+.ti.inf{background:rgba(232,168,48,.07);border-color:var(--amber2);color:var(--amber)}
+@keyframes tslide{from{transform:translateX(12px);opacity:0}to{transform:translateX(0);opacity:1}}
+.empty{text-align:center;padding:36px 20px;font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:2.5px}
+::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:var(--bg0)}::-webkit-scrollbar-thumb{background:var(--line2);border-radius:2px}::-webkit-scrollbar-thumb:hover{background:var(--amber2)}
+.out-mini{display:flex;align-items:center;gap:7px;padding:5px 8px;margin-top:5px;background:var(--bg3);border:1px solid var(--line);border-radius:1px;font-family:var(--mono);font-size:9px}
+.out-mini .dest{flex:1;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fmt-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:10px;transition:background .1s}
+.fmt-row:hover{background:rgba(232,168,48,.05)}
+.fmt-q{min-width:60px;color:var(--amber);font-weight:600}
+.fmt-ext{min-width:35px;color:var(--muted)}
+.fmt-btr{min-width:55px;color:var(--dim)}
+.fmt-codec{flex:1;color:var(--dim);font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="shell">
+<header class="topbar">
+  <div class="brand">NEXUS</div>
+  <div class="machine-pill" id="machinePill">
+    <div class="led" id="machineLed"></div>
+    <span id="machineLabel">OFFLINE</span>
+  </div>
+  <nav class="nav">
+    <button class="nav-item active" onclick="showPage('machine',this)">MAQUINA</button>
+    <button class="nav-item" onclick="showPage('tabs',this)">PESTANAS</button>
+    <button class="nav-item" onclick="showPage('streams',this)">STREAMS</button>
+    <button class="nav-item" onclick="showPage('outputs',this)">SALIDAS</button>
+    <button class="nav-item" onclick="showPage('vault',this)">BOVEDA</button>
+  </nav>
+  <div class="topbar-right">
+    <button class="btn btn-a btn-s" onclick="openM('mTab')">+ PESTANA</button>
+    <button class="btn btn-s" onclick="openM('mStream')">+ STREAM</button>
+    <button class="btn btn-s" onclick="openM('mOutput')">+ SALIDA</button>
+  </div>
+</header>
+<aside class="sidebar">
+  <div class="sb-group">
+    <div class="sb-head">PESTANAS <span class="sb-count" id="cntTabs">0</span></div>
+    <div class="sb-list" id="sbTabs"></div>
+    <button class="sb-add" onclick="openM('mTab')">+ NUEVA PESTANA</button>
+  </div>
+  <div class="sb-group">
+    <div class="sb-head">STREAMS <span class="sb-count" id="cntStreams">0</span></div>
+    <div class="sb-list" id="sbStreams"></div>
+    <button class="sb-add" onclick="openM('mStream')">+ NUEVO STREAM</button>
+  </div>
+  <div class="sb-group grow">
+    <div class="sb-head">SALIDAS RTMP <span class="sb-count" id="cntOutputs">0</span></div>
+    <div class="sb-list" id="sbOutputs"></div>
+    <button class="sb-add" onclick="openM('mOutput')">+ NUEVA SALIDA</button>
+  </div>
+</aside>
+<main class="main">
+  <div class="page active" id="page-machine">
+    <div class="ph"><div class="ph-title">MAQUINA VIRTUAL</div><div class="ph-line"></div>
+      <button class="btn btn-g btn-s" onclick="startMachine()">ENCENDER</button>
+      <button class="btn btn-r btn-s" onclick="stopMachine()">APAGAR</button>
+      <button class="btn btn-s" onclick="openM('mMachineConfig')">CONFIG</button>
+    </div>
+    <div class="machine-status">
+      <div class="stat-box"><div class="stat-v" id="sv-status">OFFLINE</div><div class="stat-k">ESTADO</div></div>
+      <div class="stat-box"><div class="stat-v" id="sv-res">-</div><div class="stat-k">RESOLUCION</div></div>
+      <div class="stat-box"><div class="stat-v" id="sv-tabs">0</div><div class="stat-k">PESTANAS</div></div>
+      <div class="stat-box"><div class="stat-v" id="sv-streams">0</div><div class="stat-k">STREAMS</div></div>
+    </div>
+    <div class="section-card">
+      <div class="sc-head" onclick="this.nextElementSibling.classList.toggle('open')">
+        <div class="sb-dot running" style="width:6px;height:6px"></div>
+        <span class="sc-title">FINGERPRINT DE IDENTIDAD</span>
+        <span style="font-family:var(--mono);font-size:9px;color:var(--dim)">COMPARTIDO POR TODAS LAS INSTANCIAS</span>
+      </div>
+      <div class="sc-body open">
+        <div class="fp-table" id="fpTable"></div>
+        <div style="margin-top:10px"><button class="btn btn-a btn-s" onclick="openM('mMachineConfig')">EDITAR IDENTIDAD</button></div>
+      </div>
+    </div>
+    <div class="section-card">
+      <div class="sc-head" onclick="this.nextElementSibling.classList.toggle('open')"><span class="sc-title">LOG DE MAQUINA</span></div>
+      <div class="sc-body open"><div id="machineLogs" style="font-family:var(--mono);font-size:10px;line-height:1.7;max-height:180px;overflow-y:auto;color:var(--muted)"></div></div>
+    </div>
+  </div>
+  <div class="page" id="page-tabs">
+    <div class="ph"><div class="ph-title">PESTANAS DEL NAVEGADOR</div><div class="ph-line"></div>
+      <button class="btn btn-a btn-s" onclick="openM('mTab')">+ NUEVA</button>
+    </div>
+    <div class="tab-grid" id="tabGrid"><div class="empty">SIN PESTANAS</div></div>
+  </div>
+  <div class="page" id="page-streams">
+    <div class="ph"><div class="ph-title">STREAMS DIRECTOS</div><div class="ph-line"></div>
+      <button class="btn btn-a btn-s" onclick="openM('mStream')">+ NUEVO</button>
+    </div>
+    <div id="streamList"><div class="empty">SIN STREAMS</div></div>
+  </div>
+  <div class="page" id="page-outputs">
+    <div class="ph"><div class="ph-title">SALIDAS RTMP</div><div class="ph-line"></div>
+      <button class="btn btn-a btn-s" onclick="openM('mOutput')">+ NUEVA</button>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="tbl">
+        <thead><tr><th>NOMBRE</th><th>DESTINO RTMP</th><th>KEY</th><th>RESOLUCION</th><th>BITRATE</th><th>ASIGNADA A</th><th></th></tr></thead>
+        <tbody id="outputBody"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="page" id="page-vault">
+    <div class="ph"><div class="ph-title">BOVEDA DE CREDENCIALES</div><div class="ph-line"></div>
+      <button class="btn btn-a btn-s" onclick="openM('mCred')">+ AGREGAR</button>
+    </div>
+    <p style="font-family:var(--mono);font-size:9px;color:var(--dim);margin-bottom:14px;letter-spacing:1.5px">CREDENCIALES INYECTADAS AUTOMATICAMENTE AL ABRIR PESTANA CON EL MISMO DOMINIO</p>
+    <div class="vault-grid" id="vaultGrid"><div class="empty">BOVEDA VACIA</div></div>
+  </div>
+</main>
+<aside class="rpanel">
+  <div class="rpanel-tabs">
+    <button class="rpanel-tab active" onclick="switchRP('console',this)">CONSOLA</button>
+    <button class="rpanel-tab" onclick="switchRP('vnc',this)">VNC</button>
+    <button class="rpanel-tab" onclick="switchRP('preview',this)">PREVIEW</button>
+  </div>
+  <div class="rpanel-body">
+    <div id="rp-console" style="display:flex;flex-direction:column;flex:1;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;border-bottom:1px solid var(--line);flex-shrink:0">
+        <span style="font-family:var(--mono);font-size:9px;color:var(--dim);letter-spacing:2px" id="consoleSource">MAQUINA</span>
+        <button class="btn btn-xs" onclick="clearConsole()">LIMPIAR</button>
+      </div>
+      <div class="console" id="console"></div>
+    </div>
+    <div id="rp-vnc" style="display:none;flex:1;flex-direction:column">
+      <div class="vnc-bar">
+        <div class="led on"></div><span>CONTROL REMOTO</span>
+        <span style="margin-left:auto;cursor:pointer;color:var(--amber2)" onclick="openVNCPopup()">ABRIR VENTANA</span>
+      </div>
+      <iframe id="vncFrame" src="about:blank" allowfullscreen style="flex:1;border:none;background:#000"></iframe>
+    </div>
+    <div id="rp-preview" style="display:none;flex:1;flex-direction:column">
+      <div class="vnc-bar">
+        <div class="led" id="previewLed"></div>
+        <span id="previewLabel" style="font-family:var(--mono);font-size:9px">SIN SELECCION</span>
+        <span style="margin-left:auto;cursor:pointer;color:var(--amber2)" onclick="openPreviewPopup()">ABRIR VENTANA</span>
+      </div>
+      <div style="flex:1;background:#000;position:relative;overflow:hidden">
+        <video id="rpVideo" autoplay muted playsinline style="width:100%;height:100%;object-fit:contain"></video>
+        <div id="rpNoSig" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:repeating-linear-gradient(45deg,#080808,#080808 2px,#0c0c0c 2px,#0c0c0c 4px)">
+          <div style="font-size:30px;opacity:.2">o</div>
+          <div class="nosig-txt">SIN SENAL</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</aside>
+</div>
+<div class="overlay" id="mTab">
+  <div class="modal">
+    <div class="mh"><span class="mh-title">NUEVA PESTANA</span><button class="mh-close" onclick="closeM('mTab')">X</button></div>
+    <div class="mb">
+      <div class="fg1">
+        <div class="fg"><label class="fl">NOMBRE</label><input class="fi" id="tName" placeholder="Mi Dashboard"></div>
+        <div class="fg"><label class="fl">URL DEL SITIO</label><input class="fi" id="tUrl" placeholder="https://studio.youtube.com/live_dashboard"></div>
+      </div>
+      <div class="fg2">
+        <div class="fg"><label class="fl">FPS CAPTURA</label>
+          <select class="fi" id="tFps"><option value="24">24 fps</option><option value="30" selected>30 fps</option><option value="60">60 fps</option></select>
+        </div>
+        <div class="fg"><label class="fl">ESPERA CARGA (s)</label><input class="fi" id="tWait" type="number" value="5" min="1" max="60"></div>
+      </div>
+      <div class="fg2">
+        <div class="fg"><label class="fl">NAVEGADOR</label>
+          <select class="fi" id="tBrowser">
+            <option value="chromium">Chromium (general)</option>
+            <option value="firefox">Firefox ESR (DRM: Disney+, Netflix)</option>
+          </select>
+        </div>
+      </div>
+      <div class="divl"></div>
+      <div class="toggle-row">
+        <label class="tog"><input type="checkbox" id="tRetry" onchange="togRow('tRetryRow',this.checked)"><span class="tog-sl"></span></label>
+        <span class="tog-lbl">Auto-reconexion si la pestana cae</span>
+      </div>
+      <div id="tRetryRow" style="display:none" class="fg2">
+        <div class="fg"><label class="fl">INTERVALO (s)</label><input class="fi" id="tRetryInt" type="number" value="15" min="5"></div>
+      </div>
+    </div>
+    <div class="mf"><button class="btn" onclick="closeM('mTab')">CANCELAR</button><button class="btn btn-a" onclick="saveTab()">CREAR</button></div>
+  </div>
+</div>
+<div class="overlay" id="mStream">
+  <div class="modal" style="width:560px">
+    <div class="mh"><span class="mh-title">NUEVO STREAM</span><button class="mh-close" onclick="closeM('mStream')">X</button></div>
+    <div class="mb">
+      <div class="fg1">
+        <div class="fg"><label class="fl">NOMBRE</label><input class="fi" id="sName" placeholder="Canal Principal"></div>
+      </div>
+      <div class="divl"></div>
+      <div class="fg"><label class="fl">TIPO DE FUENTE</label>
+        <select class="fi" id="sSrcType" onchange="toggleSrcType()">
+          <option value="url">URL externa (m3u8, rtmp, http...)</option>
+          <option value="tab">Pestaña activa del navegador</option>
+          <option value="screen">Captura de pantalla de pestaña</option>
+        </select>
+      </div>
+      <div id="sSrcUrlRow" class="fg">
+        <label class="fl">URL FUENTE</label>
+        <input class="fi" id="sSrc" placeholder="https://... o rtmp://...">
+      </div>
+      <div id="sSrcTabRow" style="display:none">
+        <div class="fg"><label class="fl">PESTAÑA</label>
+          <select class="fi" id="sSrcTab"></select>
+        </div>
+        <div class="fg"><label class="fl">SALIDA RTMP</label>
+          <select class="fi" id="sSrcOut"></select>
+        </div>
+        <div style="padding:6px 0;font-family:var(--mono);font-size:9px;color:var(--dim)">
+          El stream capturara la pantalla de esa pestana y la enviara a la salida seleccionada
+        </div>
+      </div>
+      <div class="divl"></div>
+      <div class="toggle-row">
+        <label class="tog"><input type="checkbox" id="sRetry"><span class="tog-sl"></span></label>
+        <span class="tog-lbl">Auto-reconexion cuando el stream cae</span>
+      </div>
+      <div class="fg2" style="margin-top:8px">
+        <div class="fg"><label class="fl">INTERVALO RETRY (s)</label><input class="fi" id="sRetryInt" type="number" value="30" min="5"></div>
+        <div class="fg"><label class="fl">BITRATE</label>
+          <select class="fi" id="sBitrate">
+            <option value="3000k">3000k (HD)</option>
+            <option value="4500k">4500k (HD+)</option>
+            <option value="6000k">6000k (Full HD)</option>
+            <option value="1500k">1500k (SD)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="mf"><button class="btn" onclick="closeM('mStream')">CANCELAR</button><button class="btn btn-a" onclick="saveStream()">CREAR</button></div>
+  </div>
+</div>
+<div class="overlay" id="mOutput">
+  <div class="modal">
+    <div class="mh"><span class="mh-title">NUEVA SALIDA RTMP</span><button class="mh-close" onclick="closeM('mOutput')">X</button></div>
+    <div class="mb">
+      <div class="fg2">
+        <div class="fg"><label class="fl">NOMBRE</label><input class="fi" id="oName" placeholder="Servidor Principal"></div>
+        <div class="fg"><label class="fl">ASIGNAR A</label>
+          <select class="fi" id="oAssign"><option value="">Sin asignar</option><option value="__all__">Todas las pestanas</option></select>
+        </div>
+        <div class="fg s2"><label class="fl">URL RTMP</label><input class="fi" id="oRtmp" placeholder="rtmp://tu-servidor.com/live"></div>
+        <div class="fg s2"><label class="fl">STREAM KEY</label><input class="fi" id="oKey" type="password" placeholder="xxxx-xxxx-xxxx"></div>
+      </div>
+      <div class="divl"></div>
+      <div class="fg3">
+        <div class="fg"><label class="fl">RESOLUCION</label>
+          <select class="fi" id="oRes"><option value="source">Original</option><option value="1920x1080">1080p</option><option value="1280x720">720p</option><option value="854x480">480p</option></select>
+        </div>
+        <div class="fg"><label class="fl">BITRATE VIDEO</label><input class="fi" id="oBtr" value="3000k"></div>
+        <div class="fg"><label class="fl">BITRATE AUDIO</label>
+          <select class="fi" id="oAbtr"><option value="192k">192k</option><option value="128k" selected>128k</option><option value="96k">96k</option></select>
+        </div>
+      </div>
+    </div>
+    <div class="mf"><button class="btn" onclick="closeM('mOutput')">CANCELAR</button><button class="btn btn-a" onclick="saveOutput()">CREAR</button></div>
+  </div>
+</div>
+<div class="overlay" id="mCred">
+  <div class="modal">
+    <div class="mh"><span class="mh-title">AGREGAR CREDENCIAL</span><button class="mh-close" onclick="closeM('mCred')">X</button></div>
+    <div class="mb">
+      <div class="fg1">
+        <div class="fg"><label class="fl">DOMINIO</label><input class="fi" id="cDomain" placeholder="studio.youtube.com"></div>
+        <div class="fg"><label class="fl">URL DE LOGIN (opcional)</label><input class="fi" id="cLoginUrl" placeholder="https://accounts.google.com/..."></div>
+      </div>
+      <div class="fg2">
+        <div class="fg"><label class="fl">USUARIO / EMAIL</label><input class="fi" id="cUser" placeholder="correo@gmail.com" autocomplete="off"></div>
+        <div class="fg"><label class="fl">CONTRASENA</label><input class="fi" id="cPass" type="password" placeholder="..." autocomplete="new-password"></div>
+        <div class="fg s2"><label class="fl">NOTAS (opcional)</label><input class="fi" id="cNotes" placeholder="Canal principal"></div>
+        <div class="fg s2"><label class="fl">COOKIES JSON (opcional)</label>
+          <textarea class="fi" id="cCookies" rows="3" style="resize:vertical" placeholder='[{"name":"SID","value":"abc..."}]'></textarea>
+        </div>
+      </div>
+      <div class="divl"></div>
+      <div class="toggle-row">
+        <label class="tog"><input type="checkbox" id="cAutoLogin"><span class="tog-sl"></span></label>
+        <span class="tog-lbl">Auto-login al abrir pestana con este dominio</span>
+      </div>
+    </div>
+    <div class="mf"><button class="btn" onclick="closeM('mCred')">CANCELAR</button><button class="btn btn-a" onclick="saveCred()">GUARDAR</button></div>
+  </div>
+</div>
+<div class="overlay" id="mMachineConfig">
+  <div class="modal">
+    <div class="mh"><span class="mh-title">CONFIGURAR MAQUINA</span><button class="mh-close" onclick="closeM('mMachineConfig')">X</button></div>
+    <div class="mb">
+      <p style="font-family:var(--mono);font-size:9px;color:var(--amber2);margin-bottom:12px;letter-spacing:1.5px">DETEN TODO ANTES DE CAMBIAR RESOLUCION</p>
+      <div class="fg2">
+        <div class="fg"><label class="fl">ANCHO (px)</label><input class="fi" id="cfgW" type="number" value="1280"></div>
+        <div class="fg"><label class="fl">ALTO (px)</label><input class="fi" id="cfgH" type="number" value="720"></div>
+      </div>
+      <div class="divl"></div>
+      <div class="fg1">
+        <div class="fg"><label class="fl">USER AGENT</label><input class="fi" id="cfgUA" placeholder="Mozilla/5.0..."></div>
+        <div class="fg"><label class="fl">TIMEZONE</label>
+          <select class="fi" id="cfgTZ">
+            <option>America/New_York</option><option>America/Los_Angeles</option><option>America/Chicago</option>
+            <option>Europe/London</option><option>Europe/Madrid</option><option>America/Bogota</option>
+            <option>America/Mexico_City</option><option>America/Argentina/Buenos_Aires</option>
+          </select>
+        </div>
+        <div class="fg"><label class="fl">IDIOMA</label><input class="fi" id="cfgLang" value="en-US"></div>
+      </div>
+    </div>
+    <div class="mf"><button class="btn" onclick="closeM('mMachineConfig')">CANCELAR</button><button class="btn btn-a" onclick="saveMachineConfig()">APLICAR</button></div>
+  </div>
+</div>
+<div class="overlay" id="mExtract">
+  <div class="modal" style="width:620px">
+    <div class="mh"><span class="mh-title" id="extractTitle">FORMATOS DISPONIBLES</span><button class="mh-close" onclick="closeM('mExtract')">X</button></div>
+    <div class="mb" style="padding:0">
+      <div id="extractLoading" style="text-align:center;padding:28px;font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:2px">EXTRAYENDO...</div>
+      <div id="extractList" style="display:none">
+        <div style="padding:10px 14px;font-family:var(--mono);font-size:9px;color:var(--dim);border-bottom:1px solid var(--line);letter-spacing:1.5px">
+          SELECCIONA UN FORMATO Y UNA SALIDA RTMP PARA INICIAR RESTREAM
+        </div>
+        <div style="padding:10px 14px;display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--line)">
+          <span style="font-family:var(--mono);font-size:9px;color:var(--dim)">SALIDA RTMP:</span>
+          <select class="fi" id="extractOutputSel" style="flex:1;max-width:280px"></select>
+        </div>
+        <div id="extractFormats" style="max-height:380px;overflow-y:auto"></div>
+      </div>
+    </div>
+    <div class="mf"><button class="btn" onclick="closeM('mExtract')">CERRAR</button></div>
+  </div>
+</div>
+<div id="toast"></div>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script>
+var S={machine:{},tabs:[],streams:[],outputs:[],creds:{}};
+var logSrc={type:'machine',id:null,label:'MAQUINA'};
+var currentPreviewTid=null,hlsInstance=null;
+
+function showPage(name,el){
+  document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
+  document.querySelectorAll('.nav-item').forEach(function(b){b.classList.remove('active');});
+  document.getElementById('page-'+name).classList.add('active');
+  if(el&&el.classList.contains('nav-item'))el.classList.add('active');
+}
+function switchRP(tab,el){
+  document.querySelectorAll('.rpanel-tab').forEach(function(b){b.classList.remove('active');});
+  el.classList.add('active');
+  document.getElementById('rp-console').style.display='none';
+  document.getElementById('rp-vnc').style.display='none';
+  document.getElementById('rp-preview').style.display='none';
+  if(tab==='console')document.getElementById('rp-console').style.display='flex';
+  else if(tab==='vnc'){document.getElementById('rp-vnc').style.display='flex';loadVNC();}
+  else document.getElementById('rp-preview').style.display='flex';
+}
+function openM(id){
+  document.getElementById(id).classList.add('open');
+  if(id==='mOutput')populateAssign();
+  if(id==='mMachineConfig')fillMachineConfig();
+}
+function closeM(id){document.getElementById(id).classList.remove('open');}
+document.querySelectorAll('.overlay').forEach(function(o){
+  o.addEventListener('click',function(e){if(e.target===o)o.classList.remove('open');});
+});
+function toast(msg,type){
+  type=type||'ok';
+  var el=document.createElement('div');
+  el.className='ti '+type;el.textContent=msg;
+  document.getElementById('toast').appendChild(el);
+  setTimeout(function(){el.remove();},3200);
+}
+function api(m,p,b){
+  var opts={method:m,headers:{'Content-Type':'application/json'}};
+  if(b)opts.body=JSON.stringify(b);
+  return fetch(p,opts).then(function(r){return r.json();}).catch(function(e){toast('Error de conexion','err');return null;});
+}
+function togRow(id,show){document.getElementById(id).style.display=show?'grid':'none';}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function badgeClass(st){
+  if(st==='running')return 'on';
+  if(st==='crashed'||st==='error')return 'err';
+  if(st==='loading'||st==='extracting'||st==='booting')return 'ld';
+  if(st==='retrying')return 'ret';
+  return '';
+}
+function sbDot(st){
+  var m={running:'running',crashed:'crashed',error:'error',loading:'loading',extracting:'extracting',retrying:'retrying'};
+  return m[st]||'';
+}
+function startMachine(){api('POST','/api/machine/start').then(function(r){if(r)toast('Maquina iniciando...','inf');});}
+function stopMachine(){if(!confirm('Apagar la maquina?'))return;api('POST','/api/machine/stop').then(function(){toast('Maquina apagada','ok');});}
+function fillMachineConfig(){
+  var m=S.machine;
+  document.getElementById('cfgW').value=m.width||1280;
+  document.getElementById('cfgH').value=m.height||720;
+  document.getElementById('cfgUA').value=(m.fingerprint||{}).user_agent||'';
+  document.getElementById('cfgLang').value=(m.fingerprint||{}).language||'en-US';
+  var tz=(m.fingerprint||{}).timezone||'';
+  var sel=document.getElementById('cfgTZ');
+  for(var i=0;i<sel.options.length;i++){if(sel.options[i].value===tz)sel.options[i].selected=true;}
+}
+function saveMachineConfig(){
+  api('PUT','/api/machine/config',{width:parseInt(document.getElementById('cfgW').value),height:parseInt(document.getElementById('cfgH').value),fingerprint:{user_agent:document.getElementById('cfgUA').value,language:document.getElementById('cfgLang').value,timezone:document.getElementById('cfgTZ').value}}).then(function(r){
+    if(r&&r.ok){toast('Config guardada','ok');closeM('mMachineConfig');}
+    else if(r)toast(r.error||'Error','err');
+  });
+}
+function renderMachine(){
+  var m=S.machine;
+  var pill=document.getElementById('machinePill');
+  var led=document.getElementById('machineLed');
+  var lbl=document.getElementById('machineLabel');
+  var on=m.status==='running';
+  led.className='led'+(on?' on':'');
+  pill.className='machine-pill'+(on?' on':'');
+  lbl.textContent=(m.status||'OFFLINE').toUpperCase();
+  document.getElementById('sv-status').textContent=(m.status||'OFFLINE').toUpperCase();
+  document.getElementById('sv-res').textContent=m.width?m.width+'x'+m.height:'-';
+  document.getElementById('sv-tabs').textContent=m.tabs_active||0;
+  document.getElementById('sv-streams').textContent=m.streams_active||0;
+  var fp=document.getElementById('fpTable');
+  if(fp&&m.fingerprint){
+    var html='';
+    Object.keys(m.fingerprint).forEach(function(k){html+='<div class="fp-k">'+esc(k.toUpperCase())+'</div><div class="fp-v">'+esc(m.fingerprint[k])+'</div>';});
+    fp.innerHTML=html;
+  }
+  var ml=document.getElementById('machineLogs');
+  if(ml){ml.innerHTML=(m.logs||[]).map(function(l){return '<div>'+esc(l)+'</div>';}).join('');ml.scrollTop=ml.scrollHeight;}
+}
+function saveTab(){
+  var name=document.getElementById('tName').value.trim();
+  var url=document.getElementById('tUrl').value.trim();
+  if(!name||!url)return toast('Nombre y URL requeridos','err');
+  api('POST','/api/tabs',{name:name,url:url,fps:parseInt(document.getElementById('tFps').value),load_wait:parseInt(document.getElementById('tWait').value),autoretry:document.getElementById('tRetry').checked,retry_interval:parseInt(document.getElementById('tRetryInt').value),browser:document.getElementById('tBrowser').value}).then(function(r){
+    if(r&&r.ok){toast('Pestana creada','ok');closeM('mTab');document.getElementById('tName').value='';document.getElementById('tUrl').value='';loadAll();}
+    else if(r)toast(r.error||'Error','err');
+  });
+}
+function startTab(tid){
+  if(S.machine.status!=='running')return toast('Enciende la maquina primero','err');
+  api('POST','/api/tabs/'+tid+'/start').then(function(r){if(r&&r.ok)toast('Pestana iniciando...','inf');else if(r)toast(r.error,'err');});
+}
+function stopTab(tid){api('POST','/api/tabs/'+tid+'/stop').then(function(){toast('Pestana detenida','inf');});}
+function deleteTab(tid){if(!confirm('Eliminar pestana?'))return;api('DELETE','/api/tabs/'+tid).then(function(){toast('Eliminada','ok');loadAll();});}
+function selectPreview(tid,name){
+  currentPreviewTid=tid;
+  document.getElementById('previewLabel').textContent=name;
+  document.getElementById('previewLed').className='led on';
+  document.getElementById('rpNoSig').style.display='none';
+  initHLS(tid);
+}
+function initHLS(tid){
+  var video=document.getElementById('rpVideo');
+  var src='/hls/'+tid+'/live.m3u8';
+  if(hlsInstance){hlsInstance.destroy();hlsInstance=null;}
+  if(Hls.isSupported()){
+    hlsInstance=new Hls({liveSyncDurationCount:1,liveMaxLatencyDurationCount:3,manifestLoadingRetryDelay:2000,manifestLoadingMaxRetry:99});
+    hlsInstance.loadSource(src);hlsInstance.attachMedia(video);
+    hlsInstance.on(Hls.Events.MANIFEST_PARSED,function(){video.play().catch(function(){});});
+    hlsInstance.on(Hls.Events.ERROR,function(e,d){if(d.fatal){document.getElementById('previewLed').className='led';setTimeout(function(){if(hlsInstance)hlsInstance.loadSource(src);},3000);}});
+  }else if(video.canPlayType('application/vnd.apple.mpegurl')){video.src=src;video.play().catch(function(){});}
+}
+function openPreviewPopup(){if(currentPreviewTid)window.open('/preview/'+currentPreviewTid,'_blank','width=860,height=520,menubar=no,toolbar=no');}
+function setLogSource(type,id,label){
+  logSrc={type:type,id:id,label:label};
+  document.getElementById('consoleSource').textContent=label;
+  document.querySelectorAll('.rpanel-tab').forEach(function(b){b.classList.remove('active');});
+  document.querySelectorAll('.rpanel-tab')[0].classList.add('active');
+  document.getElementById('rp-console').style.display='flex';
+  document.getElementById('rp-vnc').style.display='none';
+  document.getElementById('rp-preview').style.display='none';
+}
+function renderTabs(){
+  var grid=document.getElementById('tabGrid');
+  var sb=document.getElementById('sbTabs');
+  document.getElementById('cntTabs').textContent=S.tabs.length;
+  sb.innerHTML=S.tabs.map(function(t){return '<div class="sb-item" onclick="setLogSource(\'tab\',\''+t.id+'\',\''+esc(t.name)+'\')"><div class="sb-dot '+sbDot(t.status)+'"></div><div class="sb-label">'+esc(t.name)+'</div><div class="sb-st">'+t.status+'</div></div>';}).join('');
+  if(!S.tabs.length){grid.innerHTML='<div class="empty">SIN PESTANAS</div>';return;}
+  grid.innerHTML=S.tabs.map(function(t){
+    var running=t.status==='running';
+    var credDomain='';
+    try{var dom=new URL(t.url).hostname.replace('www.','');if(S.creds[dom]||S.creds['www.'+dom])credDomain=dom;}catch(e){}
+    return '<div class="tab-card '+t.status+'">'+
+      '<div class="tab-card-top"><div class="sb-dot '+sbDot(t.status)+'"></div><div class="tc-name">'+esc(t.name)+'</div><span class="badge '+badgeClass(t.status)+'">'+t.status.toUpperCase()+'</span></div>'+
+      '<div class="tab-preview" onclick="selectPreview(\''+t.id+'\',\''+esc(t.name)+'\');switchRP(\'preview\',document.querySelectorAll(\'.rpanel-tab\')[2])">'+
+        (running?'<video id="mini-'+t.id+'" autoplay muted playsinline></video><div class="preview-live"><div class="live-dot"></div>EN VIVO</div>':'<div class="nosig"><div style="font-size:24px;opacity:.2">o</div><div class="nosig-txt">SIN SENAL</div></div>')+
+      '</div>'+
+      '<div class="tab-body">'+
+        '<div class="tab-url" title="'+esc(t.url)+'">'+esc(t.url)+'</div>'+
+        (credDomain?'<div class="tab-cred">AUTO-LOGIN: '+esc(credDomain)+'</div>':'')+
+        '<div class="row">'+
+          (running?'<button class="btn btn-r btn-s" onclick="stopTab(\''+t.id+'\')">DETENER</button>':'<button class="btn btn-g btn-s" onclick="startTab(\''+t.id+'\')">INICIAR</button>')+
+          '<button class="btn btn-s" onclick="selectPreview(\''+t.id+'\',\''+esc(t.name)+'\');switchRP(\'preview\',document.querySelectorAll(\'.rpanel-tab\')[2])">PREVIEW</button>'+'<button class="btn btn-s" onclick="openTabVNC(\''+t.id+'\','+(t.ws_port||'null')+')">VNC</button>'+'<button class="btn btn-s" onclick="openTabVNC(\''+t.id+'\','+(t.ws_port||'null')+')">VNC</button>'+
+          '<button class="btn btn-a btn-s" onclick="openExtract(\''+t.id+'\')">EXTRAER VIDEO</button>'+'<button class="btn btn-s" onclick="setLogSource(\'tab\',\''+t.id+'\',\''+esc(t.name)+'\')">LOGS</button>'+
+          '<button class="btn btn-r btn-s" onclick="deleteTab(\''+t.id+'\')">X</button>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+  S.tabs.filter(function(t){return t.status==='running';}).forEach(function(t){
+    var v=document.getElementById('mini-'+t.id);
+    if(!v||v._hls)return;v._hls=true;
+    var src='/hls/'+t.id+'/live.m3u8';
+    if(Hls.isSupported()){var h=new Hls({liveSyncDurationCount:1});h.loadSource(src);h.attachMedia(v);h.on(Hls.Events.MANIFEST_PARSED,function(){v.play().catch(function(){});});}
+    else if(v.canPlayType('application/vnd.apple.mpegurl')){v.src=src;v.play().catch(function(){});}
+  });
+}
+function toggleSrcType(){
+  var t=document.getElementById('sSrcType').value;
+  document.getElementById('sSrcUrlRow').style.display = t==='url' ? '' : 'none';
+  document.getElementById('sSrcTabRow').style.display = (t==='tab'||t==='screen') ? '' : 'none';
+  if(t==='tab'||t==='screen'){
+    var tabSel = document.getElementById('sSrcTab');
+    var outSel = document.getElementById('sSrcOut');
+    tabSel.innerHTML = '<option value="">-- Seleccionar pestana --</option>';
+    outSel.innerHTML = '<option value="">-- Seleccionar salida RTMP --</option>';
+    S.tabs.filter(function(t){return t.status==='running';}).forEach(function(t){
+      tabSel.add(new Option(t.name + ' (' + t.url.substring(0,30) + '...)', t.id));
+    });
+    S.outputs.forEach(function(o){
+      outSel.add(new Option(o.name + ' -> ' + o.rtmp.substring(0,25), o.id));
+    });
+  }
+}
+function saveStream(){
+  var name = document.getElementById('sName').value.trim();
+  var type = document.getElementById('sSrcType').value;
+  var retry = document.getElementById('sRetry').checked;
+  var retryInt = parseInt(document.getElementById('sRetryInt').value) || 30;
+  var bitrate = document.getElementById('sBitrate').value;
+  if(!name) return toast('Nombre requerido','err');
+
+  if(type === 'url'){
+    var src = document.getElementById('sSrc').value.trim();
+    if(!src) return toast('URL requerida','err');
+    api('POST','/api/streams',{name:name,source:src,autoretry:retry,retry_interval:retryInt,bitrate:bitrate}).then(function(r){
+      if(r&&r.ok){toast('Stream creado','ok');closeM('mStream');loadAll();}
+      else if(r) toast(r.error||'Error','err');
+    });
+  } else {
+    var tabId  = document.getElementById('sSrcTab').value;
+    var outId  = document.getElementById('sSrcOut').value;
+    if(!tabId) return toast('Selecciona una pestana','err');
+    if(!outId) return toast('Selecciona una salida RTMP','err');
+    var endpoint = type==='screen' ? '/api/tabs/'+tabId+'/restream_screen' : '/api/tabs/'+tabId+'/restream_screen';
+    api('POST', endpoint, {output_id: outId}).then(function(r){
+      if(r && r.ok){
+        toast('Stream de pantalla iniciado','ok');
+        closeM('mStream');
+        // Crear entrada en streams para poder controlarlo
+        api('POST','/api/streams',{
+          name: name,
+          source: 'screen://'+tabId+':'+outId,
+          autoretry: retry,
+          retry_interval: retryInt,
+          tab_id: tabId,
+          output_id: outId,
+          stream_type: 'screen'
+        }).then(function(sr){
+          if(sr && sr.ok){
+            loadAll();
+          }
+        });
+      } else if(r) toast(r.error||'Error','err');
+    });
+  }
+}
+function startScreenStream(sid, tabId, outId){
+  api('POST','/api/tabs/'+tabId+'/restream_screen',{output_id:outId}).then(function(r){
+    if(r&&r.ok){
+      toast('Stream de pantalla iniciado','ok');
+      // Marcar stream como running
+      api('POST','/api/streams/'+sid+'/start').then(function(){loadAll();});
+    } else if(r) toast(r.error||'Error','err');
+  });
+}
+function stopScreenStream(sid, tabId, outId){
+  api('POST','/api/tabs/'+tabId+'/restream_screen/stop',{output_id:outId}).then(function(r){
+    api('POST','/api/streams/'+sid+'/stop').then(function(){
+      toast('Stream detenido','ok');
+      loadAll();
+    });
+  });
+}
+function startStream(sid){api('POST','/api/streams/'+sid+'/start').then(function(r){if(r&&r.ok)toast('Stream iniciando...','inf');else if(r)toast(r.error,'err');});}
+function stopStream(sid){api('POST','/api/streams/'+sid+'/stop').then(function(){toast('Stream detenido','inf');});}
+function deleteStream(sid){if(!confirm('Eliminar stream?'))return;api('DELETE','/api/streams/'+sid).then(function(){toast('Eliminado','ok');loadAll();});}
+function renderStreams(){
+  var list=document.getElementById('streamList');
+  var sb=document.getElementById('sbStreams');
+  document.getElementById('cntStreams').textContent=S.streams.length;
+  sb.innerHTML=S.streams.map(function(s){return '<div class="sb-item" onclick="setLogSource(\'stream\',\''+s.id+'\',\''+esc(s.name)+'\')"><div class="sb-dot '+sbDot(s.status)+'"></div><div class="sb-label">'+esc(s.name)+'</div><div class="sb-st">'+s.status+'</div></div>';}).join('');
+  if(!S.streams.length){list.innerHTML='<div class="empty">SIN STREAMS</div>';return;}
+  list.innerHTML=S.streams.map(function(s){
+    var outs=S.outputs.filter(function(o){return o.stream_id===s.id;});
+    var running=['running','retrying','extracting'].indexOf(s.status)>=0;
+    return '<div class="stream-card '+s.status+'">'+
+      '<div class="sc2-head" onclick="this.nextElementSibling.nextElementSibling.classList.toggle(\'open\')">'+
+        '<div class="sb-dot '+sbDot(s.status)+'"></div><div class="sc2-name">'+esc(s.name)+'</div>'+
+        '<span class="badge '+badgeClass(s.status)+'">'+s.status.toUpperCase()+'</span>'+
+        '<div class="row" style="margin-left:6px" onclick="event.stopPropagation()">'+
+          (running?'<button class="btn btn-r btn-s" onclick="stopStream(\''+s.id+'\')">STOP</button>':'<button class="btn btn-g btn-s" onclick="startStream(\''+s.id+'\')">START</button>')+
+          '<button class="btn btn-s" onclick="setLogSource(\'stream\',\''+s.id+'\',\''+esc(s.name)+'\')">LOGS</button>'+
+          '<button class="btn btn-r btn-s" onclick="deleteStream(\''+s.id+'\')">X</button>'+
+        '</div>'+
+      '</div>'+
+      '<div class="sc2-src">'+esc(s.source)+'</div>'+
+      '<div class="sc2-body">'+
+        (outs.length?outs.map(function(o){return '<div class="out-mini"><span style="color:var(--amber2)">'+esc(o.name)+'</span><span class="dest">'+esc(o.rtmp)+'</span><span class="badge">'+o.resolution+'</span><span class="badge">'+o.bitrate+'</span></div>';}).join(''):'<div style="font-family:var(--mono);font-size:9px;color:var(--dim)">Sin salidas asignadas</div>')+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
+function populateAssign(){
+  var sel=document.getElementById('oAssign');
+  while(sel.options.length>2)sel.remove(2);
+  S.tabs.forEach(function(t){sel.add(new Option('PESTANA: '+t.name,'tab:'+t.id));});
+  S.streams.forEach(function(s){sel.add(new Option('STREAM: '+s.name,'stream:'+s.id));});
+}
+function saveOutput(){
+  var name=document.getElementById('oName').value.trim();
+  var rtmp=document.getElementById('oRtmp').value.trim();
+  if(!name||!rtmp)return toast('Nombre y URL RTMP requeridos','err');
+  var av=document.getElementById('oAssign').value;
+  var tab_id=null,stream_id=null;
+  if(av==='__all__')tab_id='__all__';
+  else if(av.indexOf('tab:')==0)tab_id=av.slice(4);
+  else if(av.indexOf('stream:')==0)stream_id=av.slice(7);
+  api('POST','/api/outputs',{name:name,rtmp:rtmp,key:document.getElementById('oKey').value,resolution:document.getElementById('oRes').value,bitrate:document.getElementById('oBtr').value,audio_bitrate:document.getElementById('oAbtr').value,tab_id:tab_id,stream_id:stream_id}).then(function(r){
+    if(r&&r.ok){toast('Salida creada','ok');closeM('mOutput');document.getElementById('oName').value='';document.getElementById('oKey').value='';loadAll();}
+    else if(r)toast(r.error||'Error','err');
+  });
+}
+function deleteOutput(oid){if(!confirm('Eliminar salida?'))return;api('DELETE','/api/outputs/'+oid).then(function(){toast('Eliminada','ok');loadAll();});}
+function getAssignLabel(o){
+  if(o.tab_id==='__all__')return 'Todas las pestanas';
+  if(o.tab_id){var t=S.tabs.find(function(t){return t.id===o.tab_id;});return t?'PESTANA: '+t.name:o.tab_id;}
+  if(o.stream_id){var s=S.streams.find(function(s){return s.id===o.stream_id;});return s?'STREAM: '+s.name:o.stream_id;}
+  return '-';
+}
+function renderOutputs(){
+  var tbody=document.getElementById('outputBody');
+  var sb=document.getElementById('sbOutputs');
+  document.getElementById('cntOutputs').textContent=S.outputs.length;
+  sb.innerHTML=S.outputs.map(function(o){return '<div class="sb-item"><div class="sb-dot"></div><div class="sb-label">'+esc(o.name)+'</div></div>';}).join('');
+  if(!S.outputs.length){tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--dim);padding:28px">SIN SALIDAS</td></tr>';return;}
+  tbody.innerHTML=S.outputs.map(function(o){return '<tr><td>'+esc(o.name)+'</td><td style="color:var(--muted)">'+esc(o.rtmp.replace(/rtmps?:\/\//,'').substring(0,28))+'...</td><td style="color:var(--dim)">'+(o.key?'........':'-')+'</td><td>'+o.resolution+'</td><td>'+o.bitrate+'</td><td style="color:var(--amber2)">'+getAssignLabel(o)+'</td><td><button class="btn btn-r btn-xs" onclick="deleteOutput(\''+o.id+'\')">ELIMINAR</button></td></tr>';}).join('');
+}
+function saveCred(){
+  var domain=document.getElementById('cDomain').value.trim();
+  if(!domain)return toast('Dominio requerido','err');
+  api('PUT','/api/credentials/'+domain,{username:document.getElementById('cUser').value,password:document.getElementById('cPass').value,login_url:document.getElementById('cLoginUrl').value,notes:document.getElementById('cNotes').value,cookies:document.getElementById('cCookies').value,auto_login:document.getElementById('cAutoLogin').checked}).then(function(r){
+    if(r&&r.ok){toast('Credencial guardada: '+domain,'ok');closeM('mCred');['cDomain','cUser','cPass','cLoginUrl','cNotes','cCookies'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});loadAll();}
+  });
+}
+function deleteCred(domain){if(!confirm('Eliminar credencial de '+domain+'?'))return;api('DELETE','/api/credentials/'+domain).then(function(){toast('Eliminada','ok');loadAll();});}
+function renderVault(){
+  var grid=document.getElementById('vaultGrid');
+  var creds=Object.values(S.creds);
+  if(!creds.length){grid.innerHTML='<div class="empty">BOVEDA VACIA</div>';return;}
+  grid.innerHTML=creds.map(function(c){
+    return '<div class="vault-card"><div class="vc-domain">'+esc(c.domain)+'</div>'+
+      '<div class="vc-row"><span class="vc-k">USUARIO</span>'+(c.username?esc(c.username):'-')+'</div>'+
+      '<div class="vc-row"><span class="vc-k">CONTRASENA</span><span class="badge '+(c.has_password?'on':'')+'">'+(c.has_password?'GUARDADA':'NO')+'</span></div>'+
+      '<div class="vc-row"><span class="vc-k">COOKIES</span><span class="badge '+(c.has_cookies?'on':'')+'">'+(c.has_cookies?'SI':'NO')+'</span></div>'+
+      '<div class="vc-row"><span class="vc-k">AUTO-LOGIN</span><span class="badge '+(c.auto_login?'on':'')+'">'+(c.auto_login?'ACTIVO':'NO')+'</span></div>'+
+      (c.notes?'<div class="vc-row" style="color:var(--dim);font-size:9px;margin-top:4px">'+esc(c.notes)+'</div>':'')+
+      '<div class="row" style="margin-top:10px"><button class="btn btn-r btn-xs" onclick="deleteCred(\''+esc(c.domain)+'\')">ELIMINAR</button></div>'+
+    '</div>';
+  }).join('');
+}
+function loadVNC(){
+  var frame=document.getElementById('vncFrame');
+  if(frame.src==='about:blank'){
+    var host=location.hostname;
+    var port=location.port||(location.protocol==='https:'?443:80);
+    var enc=location.protocol==='https:'?1:0;
+    frame.src='/vnc/vnc.html?host='+host+'&port=6080&encrypt=0&autoconnect=true&resize=scale&show_dot=true';
+  }
+}
+function openTabVNC(tid, wsPort) {
+  if(!wsPort) return toast('VNC no disponible aun, espera que inicie','err');
+  var host = location.hostname;
+  window.open('/vnc/vnc.html?host='+host+'&port='+wsPort+'&encrypt=0&autoconnect=true&resize=scale&clipboard=1','vnc_'+tid,'width=1300,height=760,menubar=no,toolbar=no');
+}
+function openVNCPopup(){
+  var host=location.hostname;var port=location.port||443;
+  window.open('/vnc/vnc.html?host='+host+'&port='+port+'&encrypt=1&autoconnect=true&resize=scale','_blank','width=1300,height=760,menubar=no,toolbar=no');
+}
+function clearConsole(){document.getElementById('console').innerHTML='';}
+function renderConsole(logs){
+  var el=document.getElementById('console');
+  var atBottom=el.scrollHeight-el.scrollTop<el.clientHeight+60;
+  el.innerHTML=logs.map(function(l){
+    var low=l.toLowerCase();
+    var cls='cl i';
+    if(low.indexOf('error')>=0||low.indexOf('x')>=0)cls='cl e';
+    else if(low.indexOf('retry')>=0||low.indexOf('reconect')>=0)cls='cl w';
+    else if(low.indexOf('ok')>=0||low.indexOf('iniciado')>=0||low.indexOf('activa')>=0)cls='cl g';
+    else if(low.indexOf('frame=')>=0)cls='cl f';
+    return '<div class="'+cls+'">'+esc(l)+'</div>';
+  }).join('');
+  if(atBottom)el.scrollTop=el.scrollHeight;
+}
+var _extractTid = null;
+var _extractPoll = null;
+
+function openExtract(tid) {
+  _extractTid = tid;
+  document.getElementById('extractTitle').textContent = 'EXTRAYENDO FORMATOS...';
+  document.getElementById('extractLoading').style.display = 'block';
+  document.getElementById('extractList').style.display = 'none';
+  openM('mExtract');
+
+  // Poblar selector de salidas
+  var sel = document.getElementById('extractOutputSel');
+  sel.innerHTML = '<option value="">-- Seleccionar salida RTMP --</option>';
+  S.outputs.forEach(function(o) {
+    sel.add(new Option(o.name + ' -> ' + o.rtmp.substring(0,30), o.id));
+  });
+
+  // Iniciar extraccion
+  api('POST', '/api/tabs/'+tid+'/extract').then(function(r) {
+    if(r && r.ok) {
+      _extractPoll = setInterval(function() { pollExtracted(tid); }, 2000);
+    } else {
+      document.getElementById('extractLoading').textContent = 'ERROR AL EXTRAER';
+    }
+  });
+}
+
+function pollExtracted(tid) {
+  api('GET', '/api/tabs/'+tid+'/extracted').then(function(r) {
+    if(!r) return;
+    if(r.urls && r.urls.length > 0) {
+      clearInterval(_extractPoll);
+      showExtracted(r);
+    }
+  });
+}
+
+function showExtracted(r) {
+  document.getElementById('extractTitle').textContent = r.title ? r.title.substring(0,50) : 'FORMATOS DISPONIBLES';
+  document.getElementById('extractLoading').style.display = 'none';
+  document.getElementById('extractList').style.display = 'block';
+  var html = '';
+  r.urls.forEach(function(f, i) {
+    var q    = f.quality || f.format_id || '-';
+    var btr  = f.tbr ? Math.round(f.tbr)+'k' : '-';
+    var codec = (f.vcodec||'').split('.')[0] + ' / ' + (f.acodec||'').split('.')[0];
+    html += '<div class="fmt-row">'
+      + '<span class="fmt-q">' + esc(String(q)) + '</span>'
+      + '<span class="fmt-ext">' + esc(f.ext||'') + '</span>'
+      + '<span class="fmt-btr">' + esc(btr) + '</span>'
+      + '<span class="fmt-codec">' + esc(codec) + '</span>'
+      + '<button class="btn btn-g btn-xs" onclick="startRestream(\''+_extractTid+'\',\''+i+'\')">RESTREAM</button>'
+      + '<button class="btn btn-s btn-xs" onclick="copyUrl(\''+i+'\')">COPIAR URL</button>'
+      + '</div>';
+  });
+  document.getElementById('extractFormats').innerHTML = html;
+  document.getElementById('extractFormats')._data = r.urls;
+}
+
+function startRestream(tid, idx) {
+  var formats = document.getElementById('extractFormats')._data;
+  if(!formats) return;
+  var f      = formats[parseInt(idx)];
+  var outId  = document.getElementById('extractOutputSel').value;
+  if(!outId) return toast('Selecciona una salida RTMP primero', 'err');
+  api('POST', '/api/tabs/'+tid+'/restream', {url: f.url, output_id: outId}).then(function(r) {
+    if(r && r.ok) {
+      toast('Restream iniciado', 'ok');
+      closeM('mExtract');
+      loadAll();
+    } else if(r) toast(r.error || 'Error', 'err');
+  });
+}
+
+function copyUrl(idx) {
+  var formats = document.getElementById('extractFormats')._data;
+  if(!formats) return;
+  var f = formats[parseInt(idx)];
+  navigator.clipboard.writeText(f.url).then(function() {
+    toast('URL copiada', 'ok');
+  }).catch(function() {
+    prompt('URL del stream:', f.url);
+  });
+}
+
+function exportCookies(tid) {
+  var domain = prompt('Dominio a exportar (ej: google.com):', 'google.com');
+  if(!domain) return;
+  api('POST', '/api/tabs/'+tid+'/export_cookies', {domain: domain}).then(function(r) {
+    if(r && r.ok) toast('Cookies guardadas en boveda: '+r.cookies_count+' cookies de '+r.domain, 'ok');
+    else if(r) toast(r.error || 'Error', 'err');
+  });
+}
+function toggleHLS(tid, active) {
+  var endpoint = active ? '/api/tabs/'+tid+'/hls/stop' : '/api/tabs/'+tid+'/hls/start';
+  api('POST', endpoint).then(function(r) {
+    if(r && r.ok) {
+      if(!active) {
+        setTimeout(function() {
+          selectPreview(tid, '');
+          switchRP('preview', document.querySelectorAll('.rpanel-tab')[2]);
+        }, 2000);
+        toast('Preview iniciando...', 'inf');
+      } else {
+        toast('Preview detenido', 'ok');
+      }
+    }
+  });
+}
+function loadAll(){
+  Promise.all([
+    api('GET','/api/machine'),api('GET','/api/tabs'),api('GET','/api/streams'),
+    api('GET','/api/outputs'),api('GET','/api/credentials')
+  ]).then(function(results){
+    if(results[0])S.machine=results[0];
+    if(results[1])S.tabs=results[1];
+    if(results[2])S.streams=results[2];
+    if(results[3])S.outputs=results[3];
+    if(results[4])S.creds=results[4];
+    renderMachine();renderTabs();renderStreams();renderOutputs();renderVault();
+  });
+}
+function pollLogs(){
+  var p;
+  if(logSrc.type==='machine')p=Promise.resolve(S.machine.logs||[]);
+  else if(logSrc.type==='tab')p=api('GET','/api/tabs/'+logSrc.id+'/logs').then(function(r){return r?r.logs:[];});
+  else p=api('GET','/api/streams/'+logSrc.id+'/logs').then(function(r){return r?r.logs:[];});
+  p.then(function(logs){renderConsole(logs);});
+}
+loadAll();
+setInterval(loadAll,3000);
+setInterval(pollLogs,2000);
+</script>
+</body>
+</html>
