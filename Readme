@@ -1,0 +1,145 @@
+cat > /app/README.md << 'EOF'
+# NEXUS Stream Engine v3
+
+Panel web para gestionar múltiples streams simultáneos con Firefox, VNC, HLS preview y restream RTMP.
+
+## Requisitos del servidor
+- Ubuntu 20.04 / 22.04
+- Docker instalado
+- Mínimo 4GB RAM (recomendado 8GB para 7-10 pestañas)
+- Puertos abiertos: 8080, 5900-5909, 6080-6089
+
+## Instalación desde cero
+
+### 1. Instalar Docker
+```bash
+curl -fsSL https://get.docker.com | sh
+```
+
+### 2. Clonar o crear los archivos
+Crear la carpeta del proyecto:
+```bash
+mkdir /app && cd /app
+```
+Crear los 3 archivos: `Dockerfile`, `panel.py`, `index.html` con el contenido del repositorio.
+
+### 3. Instalar noVNC
+```bash
+cd /app
+git clone https://github.com/novnc/noVNC.git vnc
+```
+
+### 4. Construir la imagen
+```bash
+cd /app
+docker build -t nexus-stream .
+```
+
+### 5. Iniciar el contenedor
+```bash
+docker run -d \
+  --name nexus \
+  --restart unless-stopped \
+  -p 8080:8080 \
+  -p 5900-5909:5900-5909 \
+  -p 6080-6089:6080-6089 \
+  --shm-size=2g \
+  --cap-add SYS_ADMIN \
+  nexus-stream
+```
+
+### 6. Acceder al panel
+```
+http://IP-DEL-SERVIDOR:8080
+```
+
+---
+
+## Comandos útiles
+
+### Ver logs del contenedor
+```bash
+docker logs nexus --tail 50
+```
+
+### Reiniciar el contenedor
+```bash
+docker restart nexus
+```
+
+### Detener y eliminar
+```bash
+docker stop nexus && docker rm nexus
+```
+
+### Reconstruir después de cambios en los archivos
+```bash
+cd /app && docker stop nexus && docker rm nexus && docker build -t nexus-stream . && docker run -d \
+  --name nexus \
+  --restart unless-stopped \
+  -p 8080:8080 \
+  -p 5900-5909:5900-5909 \
+  -p 6080-6089:6080-6089 \
+  --shm-size=2g \
+  --cap-add SYS_ADMIN \
+  nexus-stream
+```
+
+### Entrar al contenedor
+```bash
+docker exec -it nexus bash
+```
+
+---
+
+## Arquitectura
+
+Cada pestaña tiene su propio:
+- **Xvfb** — display virtual independiente (:99 a :108)
+- **Firefox ESR** — navegador con soporte DRM (Disney+, Netflix)
+- **PulseAudio** — audio virtual
+- **x11vnc + websockify** — acceso VNC por navegador
+- **FFmpeg HLS** — preview bajo demanda (no siempre grabando)
+
+El perfil de Firefox es compartido (cookies, extensiones, sesiones) y se guarda automáticamente al detener cada pestaña.
+
+---
+
+## Flujo de uso
+
+### Abrir un canal y hacer restream
+1. Crear pestaña → poner URL del canal → INICIAR
+2. Esperar que diga "Pestana activa"
+3. Abrir VNC → navegar al video → reproducir
+4. Clic en **EXTRAER VIDEO** → seleccionar formato → seleccionar salida RTMP → RESTREAM
+5. Si el sitio tiene DRM (Disney+) usar **STREAM PANTALLA** en lugar de EXTRAER VIDEO
+
+### Guardar sesión de Google/YouTube
+1. Abrir pestaña con https://accounts.google.com
+2. Loguearse por VNC
+3. Clic en **EXPORTAR COOKIES** → escribir `google.com`
+4. Las próximas pestañas heredan la sesión automáticamente
+
+### Instalar extensiones en Firefox
+1. Abrir cualquier pestaña → VNC → instalar extensión normalmente
+2. Al detener la pestaña se guarda automáticamente al perfil maestro
+3. Las próximas pestañas tendrán la extensión instalada
+
+---
+
+## Puertos
+
+| Puerto | Uso |
+|--------|-----|
+| 8080 | Panel web principal |
+| 5900-5909 | VNC (una por pestaña) |
+| 6080-6089 | WebSocket VNC para noVNC (una por pestaña) |
+
+---
+
+## Notas importantes
+- Máximo 10 pestañas simultáneas (displays :99 a :108)
+- El preview HLS es bajo demanda — activar solo cuando se necesite ver
+- Los tokens de streams (m3u8) están atados a la sesión del navegador — usar STREAM PANTALLA si da 403
+- Firefox ESR incluye soporte Widevine para sitios DRM
+EOF
