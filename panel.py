@@ -1,107 +1,258 @@
 from flask import Flask, request, send_from_directory
-import subprocess, threading, uuid, json, datetime, re, time, os, shutil, glob
+import subprocess, threading, uuid, json, datetime, time, os, shutil, re
 
 app = Flask(__name__)
 
-machine = {
-    'status': 'running',
-    'width': 1280, 'height': 720,
-    'logs': [], 'started_at': datetime.datetime.utcnow().isoformat(),
-    'fingerprint': {
-        'user_agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0',
-        'timezone': 'America/New_York',
-        'language': 'en-US',
-    }
-}
+computers = {}
+outputs   = {}
+machine   = {'status':'running','logs':[],'started_at':datetime.datetime.utcnow().isoformat()}
 
-tabs        = {}
-outputs     = {}
-streams     = {}
-credentials = {}
+DISPLAY_BASE  = 99
+MAX_COMPUTERS = 30
+WIN_W, WIN_H  = 1280, 720
+HLS_DIR       = '/tmp/nexus_hls'
 
-PROFILE_DIR  = '/tmp/nexus_firefox_master'
-HLS_DIR      = '/tmp/nexus_hls'
-DISPLAY_BASE = 99
-DISPLAY_MAX  = 10
-display_lock = threading.Lock()
-
-os.makedirs(PROFILE_DIR, exist_ok=True)
 os.makedirs(HLS_DIR, exist_ok=True)
+display_lock = threading.Lock()
 
 def ts():
     return datetime.datetime.utcnow().strftime('%H:%M:%S')
 
 def mlog(msg):
+    machine['logs'].append(f'[{ts()}] {msg}')
+    if len(machine['logs']) > 200:
+        machine['logs'] = machine['logs'][-200:]
+
+def clog(c, msg):
     e = f'[{ts()}] {msg}'
-    machine['logs'].append(e)
-    if len(machine['logs']) > 300:
-        machine['logs'] = machine['logs'][-300:]
-
-def tlog(lst, msg):
-    e = f'[{ts()}] {msg}'
-    lst.append(e)
-    if len(lst) > 300:
-        lst[:] = lst[-300:]
-
-def domain_from_url(url):
-    try:
-        from urllib.parse import urlparse
-        return urlparse(url).netloc.replace('www.', '')
-    except:
-        return ''
-
-def get_stream_url(url):
-    if any(x in url for x in ['.m3u8', '.m3u', 'rtmp://', 'rtmps://', 'rtsp://']):
-        return url
-    try:
-        r = subprocess.check_output(
-            ['yt-dlp', '-f', 'best', '-g', '--no-playlist', url],
-            text=True, timeout=30
-        ).strip().split('\n')[0]
-        return r or None
-    except:
-        return None
+    c['logs'].append(e)
+    if len(c['logs']) > 300:
+        c['logs'] = c['logs'][-300:]
 
 def alloc_display():
-    used = {t.get('display_num') for t in tabs.values() if t.get('display_num')}
-    for i in range(DISPLAY_BASE, DISPLAY_BASE + DISPLAY_MAX):
+    used = {c.get('display_num') for c in computers.values() if c.get('display_num')}
+    for i in range(DISPLAY_BASE, DISPLAY_BASE + MAX_COMPUTERS):
         if i not in used:
             return i
     return None
 
-def start_xvfb(display_num, w, h):
-    disp = f':{display_num}'
-    subprocess.run(['pkill', '-f', f'Xvfb {disp}'], capture_output=True)
+def clean_locks(path):
+    for lf in ['lock', '.parentlock', 'parent.lock']:
+        lp = os.path.join(path, lf)
+        try:
+            if os.path.islink(lp): os.unlink(lp)
+            elif os.path.exists(lp): os.remove(lp)
+        except: pass
+
+def make_profile(path):
+    os.makedirs(path, exist_ok=True)
+    with open(os.path.join(path, 'prefs.js'), 'w') as f:
+        f.write('user_pref("media.eme.enabled", true);\n')
+        f.write('user_pref("media.gmp-widevinecdm.enabled", true);\n')
+        f.write('user_pref("media.gmp-widevinecdm.visible", true);\n')
+        f.write('user_pref("media.autoplay.default", 0);\n')
+        f.write('user_pref("media.autoplay.blocking_policy", 0);\n')
+        f.write('user_pref("full-screen-api.enabled", true);\n')
+        f.write('user_pref("browser.sessionstore.resume_from_crash", false);\n')
+        f.write('user_pref("privacy.resistFingerprinting", false);\n')
+        f.write('user_pref("layers.acceleration.disabled", true);\n')
+        f.write('user_pref("gfx.webrender.all", false);\n')
+        f.write('user_pref("media.av1.enabled", false);\n')
+        f.write('user_pref("media.hardware-decode-video.enabled", false);\n')
+        f.write('user_pref("media.ffmpeg.vaapi.enabled", false);\n')
+        f.write('user_pref("network.http.max-connections", 900);\n')
+        f.write('user_pref("network.http.max-persistent-connections-per-server", 20);\n')
+        f.write('user_pref("browser.startup.page", 0);\n')
+        f.write('user_pref("browser.startup.homepage", "about:blank");\n')
+
+def get_profile(cid):
+    path  = f'/tmp/nexus_profile_{cid}'
+    saved = f'/app/saved_profile_{cid}'
+    master_profile = '/app/master_profile'
+    if not os.path.exists(path):
+        # Primero intentar clonar desde master_profile completo
+        if os.path.exists(master_profile) and os.listdir(master_profile):
+            shutil.copytree(master_profile, path)
+            clog_safe(cid, 'Perfil clonado desde master')
+        elif os.path.exists(saved) and os.listdir(saved):
+            shutil.copytree(saved, path)
+        else:
+            make_profile(path)
+    clean_locks(path)
+    # Solo copiar cookies si no hay master_profile
+    if not os.path.exists(master_profile):
+        master = '/app/master_cookies.sqlite'
+        if os.path.exists(master):
+            try: shutil.copy2(master, os.path.join(path, 'cookies.sqlite'))
+            except: pass
+    return path
+
+def clog_safe(cid, msg):
+    c = computers.get(cid)
+    if c:
+        clog(c, msg)
+
+def save_profile(cid):
+    c   = computers.get(cid)
+    src = f'/tmp/nexus_profile_{cid}'
+    dst = f'/app/saved_profile_{cid}'
+    if not os.path.exists(src): return
+    try:
+        clean_locks(src)
+        for fn in ['sessionstore.jsonlz4', 'lock', '.parentlock']:
+            fp = os.path.join(src, fn)
+            try:
+                if os.path.islink(fp): os.unlink(fp)
+                elif os.path.exists(fp): os.remove(fp)
+            except: pass
+        if os.path.exists(dst): shutil.rmtree(dst)
+        shutil.copytree(src, dst)
+        clean_locks(dst)
+        if c: clog(c, 'Perfil guardado')
+    except Exception as e:
+        if c: clog(c, f'Error guardando perfil: {e}')
+
+def set_master_profile(cid):
+    """Clonar perfil de una computadora como master para todas las demas"""
+    src = f'/tmp/nexus_profile_{cid}'
+    dst = '/app/master_profile'
+    if not os.path.exists(src):
+        return False, 'Perfil no encontrado'
+    try:
+        clean_locks(src)
+        if os.path.exists(dst): shutil.rmtree(dst)
+        shutil.copytree(src, dst)
+        clean_locks(dst)
+        # Tambien actualizar master_cookies
+        cookies = os.path.join(dst, 'cookies.sqlite')
+        if os.path.exists(cookies):
+            shutil.copy2(cookies, '/app/master_cookies.sqlite')
+        return True, 'Master profile guardado'
+    except Exception as e:
+        return False, str(e)
+
+def collect_cookies():
+    for c in computers.values():
+        if c.get('status') != 'running': continue
+        src = os.path.join(f'/tmp/nexus_profile_{c["id"]}', 'cookies.sqlite')
+        if os.path.exists(src):
+            try:
+                shutil.copy2(src, '/app/master_cookies.sqlite')
+                return True
+            except: pass
+    return False
+
+def distribute_cookies():
+    master = '/app/master_cookies.sqlite'
+    if not os.path.exists(master): return
+    for c in computers.values():
+        if c.get('status') != 'running': continue
+        dst = os.path.join(f'/tmp/nexus_profile_{c["id"]}', 'cookies.sqlite')
+        try: shutil.copy2(master, dst)
+        except: pass
+
+def cookie_loop():
+    while True:
+        time.sleep(30)
+        try:
+            collect_cookies()
+            distribute_cookies()
+        except: pass
+
+threading.Thread(target=cookie_loop, daemon=True).start()
+
+def create_sink(name):
+    try:
+        subprocess.run(['pactl', 'load-module', 'module-null-sink',
+            f'sink_name={name}',
+            f'sink_properties=device.description={name}'],
+            capture_output=True, timeout=5)
+        time.sleep(0.3)
+    except: pass
+
+def destroy_sink(name):
+    try:
+        r = subprocess.run(['pactl', 'list', 'modules', 'short'],
+            capture_output=True, text=True, timeout=5)
+        for line in r.stdout.split('\n'):
+            if name in line:
+                mod_id = line.split()[0]
+                subprocess.run(['pactl', 'unload-module', mod_id],
+                    capture_output=True, timeout=3)
+                break
+    except: pass
+
+def get_sink_inputs():
+    try:
+        r = subprocess.run(['pactl', 'list', 'sink-inputs', 'short'],
+            capture_output=True, text=True, timeout=5)
+        return [l.split()[0] for l in r.stdout.strip().split('\n') if l.strip()]
+    except: return []
+
+def assign_audio(sink_name, inputs_before, cid):
+    c = computers.get(cid)
+    for _ in range(25):
+        time.sleep(1)
+        inputs_now = set(get_sink_inputs())
+        new_inputs = inputs_now - inputs_before
+        if new_inputs:
+            for inp in new_inputs:
+                try:
+                    subprocess.run(['pactl', 'move-sink-input', inp, sink_name],
+                        capture_output=True, timeout=3)
+                except: pass
+            if c: clog(c, f'Audio -> {sink_name}')
+            return
+    if c: clog(c, 'Audio: sin nuevo stream detectado')
+
+def start_xvfb(dn):
+    disp = f':{dn}'
+    subprocess.run(['pkill', '-9', '-f', f'Xvfb {disp}'], capture_output=True)
     time.sleep(0.5)
+    for lock in [f'/tmp/.X{dn}-lock', f'/tmp/.X11-unix/X{dn}']:
+        try:
+            if os.path.exists(lock): os.remove(lock)
+        except: pass
+    time.sleep(0.3)
     proc = subprocess.Popen(
-        ['Xvfb', disp, '-screen', '0', f'{w}x{h}x24', '-ac', '+extension', 'GLX'],
+        ['Xvfb', disp, '-screen', '0', f'{WIN_W}x{WIN_H}x24', '-ac'],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT
     )
-    time.sleep(1.5)
+    time.sleep(2)
     env = os.environ.copy()
     env['DISPLAY'] = disp
-    try:
-        subprocess.run(['xsetroot', '-solid', 'black'], env=env, capture_output=True, timeout=3)
-    except:
-        pass
+    try: subprocess.run(['xsetroot', '-solid', '#0a0a0f'], env=env, capture_output=True, timeout=3)
+    except: pass
     return proc
 
-def start_pulse(display_num):
-    sock = f'/tmp/pulse-{display_num}'
-    subprocess.run(['pkill', '-f', f'pulseaudio.*{sock}'], capture_output=True)
-    time.sleep(0.3)
+def start_pulse(dn):
+    # Verificar si pulseaudio ya corre — si corre, no hacer nada
+    r = subprocess.run(['pactl', 'list', 'sinks', 'short'],
+        capture_output=True, text=True)
+    if r.returncode == 0 and r.stdout.strip():
+        return  # Ya esta corriendo, no matar
+    # Solo arrancar si no hay pulseaudio activo
     env = os.environ.copy()
-    env['DISPLAY'] = f':{display_num}'
+    env['DISPLAY'] = f':{dn}'
+    env['XDG_RUNTIME_DIR'] = '/tmp/pulse-runtime'
+    env['PULSE_RUNTIME_PATH'] = '/tmp/pulse-runtime'
+    os.makedirs('/tmp/pulse-runtime', exist_ok=True)
     subprocess.Popen(
-        ['pulseaudio', '--start', '--exit-idle-time=-1'],
-        env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
-    )
+        ['pulseaudio', '--start', '--exit-idle-time=-1', '--daemonize=yes'],
+        env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    time.sleep(1.5)
+
+def start_wm(dn):
+    env = os.environ.copy()
+    env['DISPLAY'] = f':{dn}'
+    subprocess.Popen(['openbox', '--sm-disable'], env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     time.sleep(1)
 
-def start_vnc_for_tab(tid, display_num):
-    vnc_port = 5900 + (display_num - DISPLAY_BASE)
-    ws_port  = 6080 + (display_num - DISPLAY_BASE)
-    disp     = f':{display_num}'
+def start_vnc(cid, dn):
+    vnc_port = 5900 + (dn - DISPLAY_BASE)
+    ws_port  = 6080 + (dn - DISPLAY_BASE)
+    disp     = f':{dn}'
     env      = os.environ.copy()
     env['DISPLAY'] = disp
     subprocess.run(['pkill', '-f', f'x11vnc.*{disp}'], capture_output=True)
@@ -117,428 +268,329 @@ def start_vnc_for_tab(tid, display_num):
         ['websockify', '--web', '/app/vnc', str(ws_port), f'localhost:{vnc_port}'],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT
     )
-    # Sincronizar portapapeles con xclip
-    env2 = os.environ.copy()
-    env2['DISPLAY'] = disp
-    subprocess.Popen(
-        ['bash', '-c',
-         f'while true; do '
-         f'xclip -selection clipboard -o 2>/dev/null | '
-         f'xclip -selection primary -i 2>/dev/null; '
-         f'sleep 1; done'],
-        env=env2, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
-    )
-    tab = tabs.get(tid)
-    if tab:
-        tab['vnc_port'] = vnc_port
-        tab['ws_port']  = ws_port
-        tlog(tab['logs'], f'VNC :{vnc_port}  WS :{ws_port}')
+    c = computers.get(cid)
+    if c:
+        c['vnc_port'] = vnc_port
+        c['ws_port']  = ws_port
+        clog(c, f'VNC listo en puerto {ws_port}')
 
-def setup_firefox_profile(tid):
-    dst = f'/tmp/nexus_profile_{tid}'
-    if os.path.exists(PROFILE_DIR) and os.listdir(PROFILE_DIR):
-        try:
-            if os.path.exists(dst):
-                shutil.rmtree(dst)
-            shutil.copytree(PROFILE_DIR, dst)
-            return dst
-        except:
-            pass
-    os.makedirs(dst, exist_ok=True)
-    prefs_path = os.path.join(dst, 'prefs.js')
-    with open(prefs_path, 'w') as f:
-        f.write('user_pref("media.eme.enabled", true);\n')
-        f.write('user_pref("media.gmp-widevinecdm.enabled", true);\n')
-        f.write('user_pref("media.gmp-widevinecdm.visible", true);\n')
-        f.write('user_pref("media.autoplay.default", 0);\n')
-        f.write('user_pref("media.autoplay.blocking_policy", 0);\n')
-        f.write('user_pref("full-screen-api.enabled", true);\n')
-        f.write('user_pref("browser.sessionstore.resume_from_crash", false);\n')
-        f.write('user_pref("privacy.resistFingerprinting", false);\n')
-        f.write('user_pref("browser.tabs.crashReporting.sendReport", false);\n')
-        f.write('user_pref("dom.ipc.processCount", 2);\n')
-        f.write('user_pref("gfx.webrender.all", false);\n')
-        f.write('user_pref("layers.acceleration.disabled", true);\n')
-        f.write('user_pref("browser.cache.disk.enable", true);\n')
-        f.write('user_pref("network.http.referer.defaultPolicy", 2);\n')
-    return dst
-
-def start_hls(tid):
-    tab = tabs.get(tid)
-    if not tab:
-        return
-    hls_path = os.path.join(HLS_DIR, tid)
-    os.makedirs(hls_path, exist_ok=True)
-    w    = str(machine['width'])
-    h    = str(machine['height'])
-    disp = f':{tab["display_num"]}'
-    env  = os.environ.copy()
-    env['DISPLAY'] = disp
-    cmd = [
-        'ffmpeg', '-y',
-        '-f', 'x11grab', '-r', '8', '-s', f'{w}x{h}',
-        '-i', f'{disp}+0,0',
-        '-vf', 'scale=960:540',
-        '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
-        '-b:v', '700k', '-g', '16',
-        '-f', 'hls', '-hls_time', '1', '-hls_list_size', '4',
-        '-hls_flags', 'delete_segments+omit_endlist',
-        os.path.join(hls_path, 'live.m3u8')
-    ]
-    proc = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    tab['hls_proc'] = proc
-    tlog(tab['logs'], f'HLS PID={proc.pid}')
-
-def inject_credentials(tid, domain):
-    cred = credentials.get(domain) or credentials.get('www.' + domain)
-    if not cred or not cred.get('auto_login'):
-        return
-    tab = tabs.get(tid)
-    if not tab:
-        return
-    username  = cred.get('username', '')
-    password  = cred.get('password', '')
-    login_url = cred.get('login_url', '')
-    if not username or not password:
-        return
+def get_windows(dn):
     env = os.environ.copy()
-    env['DISPLAY'] = f':{tab["display_num"]}'
-    tlog(tab['logs'], f'Auto-login: {domain}')
-    if login_url:
-        try:
-            subprocess.run(['xdotool', 'key', 'ctrl+l'], env=env, capture_output=True, timeout=3)
-            time.sleep(0.4)
-            subprocess.run(['xdotool', 'type', '--delay', '30', login_url], env=env, capture_output=True, timeout=8)
-            subprocess.run(['xdotool', 'key', 'Return'], env=env, capture_output=True, timeout=3)
-            time.sleep(4)
-        except:
-            pass
+    env['DISPLAY'] = f':{dn}'
     try:
-        subprocess.run(['xdotool', 'type', '--delay', '80', username], env=env, capture_output=True, timeout=10)
-        time.sleep(0.5)
-        subprocess.run(['xdotool', 'key', 'Return'], env=env, capture_output=True, timeout=3)
-        time.sleep(3)
-        subprocess.run(['xdotool', 'type', '--delay', '80', password], env=env, capture_output=True, timeout=10)
-        time.sleep(0.5)
-        subprocess.run(['xdotool', 'key', 'Return'], env=env, capture_output=True, timeout=3)
-        tlog(tab['logs'], 'Credenciales inyectadas - verifica VNC si pide 2FA')
-    except Exception as e:
-        tlog(tab['logs'], f'xdotool error: {e}')
+        r = subprocess.run(['wmctrl', '-l', '-G'],
+            env=env, capture_output=True, text=True, timeout=5)
+        wins = []
+        for line in r.stdout.strip().split('\n'):
+            if not line.strip(): continue
+            parts = line.split(None, 9)
+            if len(parts) < 9: continue
+            wid   = parts[0]
+            x, y  = int(parts[2]), int(parts[3])
+            w, h  = int(parts[4]), int(parts[5])
+            title = parts[8] if len(parts) > 8 else ''
+            if w < 400 or h < 300: continue
+            if not title or title == 'N/A': continue
+            wins.append({'id': wid, 'title': title, 'x': x, 'y': y, 'w': w, 'h': h})
+        return wins
+    except: return []
 
-def _cleanup_tab(tid):
-    tab = tabs.get(tid)
-    if not tab:
-        return
-    if tab.get('hls_proc'):
+def open_window(cid, url):
+    c = computers.get(cid)
+    if not c or c['status'] != 'running': return None
+    dn        = c['display_num']
+    wid       = str(uuid.uuid4())[:8]
+    sink_name = c['sink_name']
+    wins_before   = set(w['id'] for w in get_windows(dn))
+    inputs_before = set(get_sink_inputs())
+    profile = get_profile(cid)
+    env = os.environ.copy()
+    env['DISPLAY']                     = f':{dn}'
+    env['PULSE_SINK']                  = sink_name
+    env['MOZ_DISABLE_CONTENT_SANDBOX'] = '1'
+    env['MOZ_X11_EGL']                 = '0'
+    env['MOZ_DISABLE_RDD_SANDBOX']     = '1'
+    firefox_alive = c.get('firefox_proc') and c['firefox_proc'].poll() is None
+    if firefox_alive:
         try:
-            tab['hls_proc'].kill()
-        except:
-            pass
-        tab['hls_proc'] = None
-    for p in list(tab.get('output_procs', {}).values()):
-        try:
-            p.kill()
-        except:
-            pass
-    for p in list(tab.get('restream_procs', {}).values()):
-        try:
-            p.kill()
-        except:
-            pass
-    tab['output_procs']   = {}
-    tab['restream_procs'] = {}
-    dn = tab.get('display_num')
+            wins = get_windows(dn)
+            if wins:
+                fw = wins[0]['id']
+                subprocess.run(['xdotool', 'windowfocus', '--sync', fw], env=env, capture_output=True, timeout=3)
+                subprocess.run(['xdotool', 'key', '--clearmodifiers', 'ctrl+t'], env=env, capture_output=True, timeout=3)
+                time.sleep(0.8)
+                subprocess.run(['xdotool', 'key', '--clearmodifiers', 'ctrl+l'], env=env, capture_output=True, timeout=3)
+                time.sleep(0.4)
+                subprocess.run(['xdotool', 'type', '--clearmodifiers', '--delay', '20', url], env=env, capture_output=True, timeout=10)
+                time.sleep(0.2)
+                subprocess.run(['xdotool', 'key', 'Return'], env=env, capture_output=True, timeout=3)
+        except Exception as e:
+            clog(c, f'Error abriendo pestana: {e}')
+        proc = None
+    else:
+        cmd  = ['firefox-esr', '--profile', profile, '--new-instance',
+                '--no-remote', '--width', str(WIN_W), '--height', str(WIN_H), url]
+        proc = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        c['firefox_proc'] = proc
+        threading.Thread(target=assign_audio, args=(sink_name, inputs_before, cid), daemon=True).start()
+    entry = {'id': wid, 'url': url, 'pid': proc.pid if proc else 0,
+             'proc': proc, 'win_id': None, 'title': url}
+    if 'windows' not in c: c['windows'] = {}
+    c['windows'][wid] = entry
+    clog(c, f'Abriendo: {url}')
+    def detect():
+        for _ in range(30):
+            time.sleep(1)
+            for w in get_windows(dn):
+                if w['id'] not in wins_before:
+                    entry['win_id'] = w['id']
+                    entry['title']  = w['title']
+                    clog(c, f'Ventana: "{w["title"][:50]}"')
+                    return
+        clog(c, 'Ventana abierta (sin deteccion automatica)')
+    threading.Thread(target=detect, daemon=True).start()
+    return wid
+
+def cleanup_computer(cid):
+    c = computers.get(cid)
+    if not c: return
+    for p in list(c.get('rtmp_procs', {}).values()):
+        try: p.kill()
+        except: pass
+    c['rtmp_procs'] = {}
+    if c.get('hls_proc'):
+        try: c['hls_proc'].kill()
+        except: pass
+        c['hls_proc'] = None
+    if c.get('firefox_proc'):
+        try: c['firefox_proc'].kill()
+        except: pass
+        c['firefox_proc'] = None
+    subprocess.run(['pkill', '-9', '-f', f'nexus_profile_{cid}'], capture_output=True)
+    if c.get('sink_name'):
+        destroy_sink(c['sink_name'])
+    c['windows'] = {}
+    dn = c.get('display_num')
     if dn:
         ws_port = 6080 + (dn - DISPLAY_BASE)
         subprocess.run(['pkill', '-f', f'x11vnc.*:{dn}'], capture_output=True)
         subprocess.run(['pkill', '-f', f'websockify.*{ws_port}'], capture_output=True)
-        subprocess.run(['pkill', '-f', f'pulseaudio'], capture_output=True)
-        if tab.get('xvfb_proc'):
-            try:
-                tab['xvfb_proc'].kill()
-            except:
-                pass
-        subprocess.run(['pkill', '-f', f'Xvfb :{dn}'], capture_output=True)
-        tab['display_num'] = None
-        tab['xvfb_proc']   = None
-    try:
-        shutil.rmtree(os.path.join(HLS_DIR, tid))
-    except:
-        pass
-    try:
-        shutil.rmtree(f'/tmp/nexus_profile_{tid}')
-    except:
-        pass
+        subprocess.run(['pkill', '-9', '-f', 'pulseaudio'], capture_output=True)
+        subprocess.run(['pkill', '-f', 'openbox'], capture_output=True)
+        if c.get('xvfb_proc'):
+            try: c['xvfb_proc'].kill()
+            except: pass
+        subprocess.run(['pkill', '-9', '-f', f'Xvfb :{dn}'], capture_output=True)
+        c['display_num'] = None
+        c['xvfb_proc']   = None
+    try: shutil.rmtree(os.path.join(HLS_DIR, cid))
+    except: pass
 
-def stop_tab(tid):
-    tab = tabs.get(tid)
-    if not tab:
-        return
-    tab['stop_requested'] = True
-    tab['status']         = 'stopping'
-    if tab.get('chrome_proc'):
-        try:
-            tab['chrome_proc'].kill()
-        except:
-            pass
-        tab['chrome_proc'] = None
-    _cleanup_tab(tid)
-    tab['status'] = 'stopped'
-    tlog(tab['logs'], 'Detenida')
-
-def run_tab(tid):
-    tab = tabs.get(tid)
-    if not tab:
-        return
+def run_computer(cid):
+    c = computers.get(cid)
+    if not c: return
     with display_lock:
         dn = alloc_display()
         if dn is None:
-            tlog(tab['logs'], 'No hay displays disponibles (max 10)')
-            tab['status'] = 'error'
+            clog(c, 'No hay displays disponibles')
+            c['status'] = 'error'
             return
-        tab['display_num'] = dn
-    w = machine['width']
-    h = machine['height']
-    tlog(tab['logs'], f'Display :{dn} asignado')
-    xvfb = start_xvfb(dn, w, h)
-    tab['xvfb_proc'] = xvfb
-    tlog(tab['logs'], f'Xvfb PID={xvfb.pid}')
+        c['display_num'] = dn
+    clog(c, f'Display :{dn} asignado')
+    c['xvfb_proc'] = start_xvfb(dn)
+    clog(c, 'Xvfb listo')
     start_pulse(dn)
-    disp    = f':{dn}'
-    env     = os.environ.copy()
-    env['DISPLAY'] = disp
-    env['MOZ_DISABLE_CONTENT_SANDBOX'] = '1'
-    env['MOZ_X11_EGL'] = '0'
-    env['MOZ_DISABLE_RDD_SANDBOX'] = '1'
-    tab['status'] = 'loading'
-    url    = tab['url']
-    domain = domain_from_url(url)
-    tlog(tab['logs'], f'Abriendo: {url}')
-    profile_dir = setup_firefox_profile(tid)
-    cmd = [
-        'firefox-esr',
-        '--profile', profile_dir,
-        '--new-instance',
-        '--no-remote',
-        '--width', str(w),
-        '--height', str(h),
-        url
-    ]
-    proc = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    tab['chrome_proc'] = proc
-    tab['pid']         = proc.pid
-    tlog(tab['logs'], f'Firefox PID={proc.pid}')
-    load_wait = tab.get('load_wait', 8)
-    for _ in range(load_wait * 2):
-        if tab.get('stop_requested'):
-            proc.kill()
-            tab['status'] = 'stopped'
-            _cleanup_tab(tid)
-            return
-        time.sleep(0.5)
-    tab['status']     = 'running'
-    tab['started_at'] = datetime.datetime.utcnow().isoformat()
-    tlog(tab['logs'], 'Pestana activa')
-    threading.Thread(target=start_vnc_for_tab, args=(tid, dn), daemon=True).start()
-    if domain:
-        threading.Thread(target=inject_credentials, args=(tid, domain), daemon=True).start()
-    assigned = [oid for oid, o in outputs.items() if o.get('tab_id') in (tid, '__all__')]
-    for oid in assigned:
-        threading.Thread(target=run_tab_output, args=(tid, oid), daemon=True).start()
-    proc.wait()
-    if tab.get('stop_requested'):
-        tab['status'] = 'stopped'
-        _cleanup_tab(tid)
-        return
-    tab['status'] = 'crashed'
-    tlog(tab['logs'], 'Firefox termino inesperadamente')
-    if tab.get('autoretry'):
-        iv = tab.get('retry_interval', 15)
-        tlog(tab['logs'], f'Reconectando en {iv}s...')
-        for _ in range(iv * 2):
-            if tab.get('stop_requested'):
-                break
-            time.sleep(0.5)
-        if not tab.get('stop_requested'):
-            tab['stop_requested'] = False
-            run_tab(tid)
-    else:
-        _cleanup_tab(tid)
-        tab['status'] = 'stopped'
+    clog(c, 'Audio listo')
+    sink_name      = f'nexus_sink_{cid}'
+    c['sink_name'] = sink_name
+    create_sink(sink_name)
+    start_wm(dn)
+    c['status']       = 'running'
+    c['started_at']   = datetime.datetime.utcnow().isoformat()
+    c['windows']      = {}
+    c['rtmp_procs']   = {}
+    c['firefox_proc'] = None
+    clog(c, 'Computadora lista')
+    threading.Thread(target=start_vnc, args=(cid, dn), daemon=True).start()
+    start_url = c.get('start_url', '')
+    if start_url and start_url != 'about:blank':
+        time.sleep(2)
+        open_window(cid, start_url)
+    while not c.get('stop_requested'):
+        time.sleep(2)
+    save_profile(cid)
+    cleanup_computer(cid)
+    c['status'] = 'stopped'
+    clog(c, 'Apagada')
 
-def run_tab_output(tid, oid):
-    tab = tabs.get(tid)
+def start_rtmp(cid, oid, win_id=None):
+    c   = computers.get(cid)
     out = outputs.get(oid)
-    if not tab or not out:
-        return
+    if not c or not out or c['status'] != 'running': return
+    dn   = c['display_num']
+    disp = f':{dn}'
     dest = out['rtmp'].rstrip('/')
-    if out.get('key'):
-        dest += '/' + out['key']
-    w    = str(machine['width'])
-    h    = str(machine['height'])
-    fps  = str(tab.get('fps', 30))
+    if out.get('key'): dest += '/' + out['key']
     btr  = out.get('bitrate', '3000k')
     abtr = out.get('audio_bitrate', '128k')
-    res  = out.get('resolution', 'source')
-    disp = f':{tab["display_num"]}'
-    vf   = f'scale={w}:{h}'
-    if res not in ('source', 'copy', ''):
-        try:
-            rw, rh = res.split('x')
-            vf = f'scale={rw}:{rh}:force_original_aspect_ratio=decrease,pad={rw}:{rh}:(ow-iw)/2:(oh-ih)/2:black'
-        except:
-            pass
-    env = os.environ.copy()
+    fps  = str(out.get('fps', 30))
+    name = out.get('name', oid)
+    env  = os.environ.copy()
     env['DISPLAY'] = disp
+    if 'rtmp_procs' not in c: c['rtmp_procs'] = {}
+    if oid in c['rtmp_procs']:
+        try: c['rtmp_procs'][oid].kill()
+        except: pass
+        time.sleep(0.5)
+    audio_source = c.get('sink_name', 'default') + '.monitor'
+    if win_id:
+        try:
+            subprocess.run(['xdotool', 'windowfocus', '--sync', win_id], env=env, capture_output=True, timeout=3)
+            subprocess.run(['xdotool', 'windowraise', win_id], env=env, capture_output=True, timeout=3)
+            subprocess.run(['xdotool', 'windowmove', '--sync', win_id, '0', '0'], env=env, capture_output=True, timeout=3)
+            subprocess.run(['xdotool', 'windowsize', '--sync', win_id, str(WIN_W), str(WIN_H)], env=env, capture_output=True, timeout=3)
+            time.sleep(0.5)
+        except Exception as e:
+            clog(c, f'Error preparando ventana: {e}')
+    buf       = str(int(btr.replace('k', '')) * 2) + 'k'
+    cpu_count = os.cpu_count() or 2
+    threads   = max(1, cpu_count - 1)
     cmd = [
         'ffmpeg', '-y',
-        '-f', 'x11grab', '-r', fps, '-s', f'{w}x{h}',
+        '-f', 'x11grab', '-r', fps, '-s', f'{WIN_W}x{WIN_H}',
+        '-draw_mouse', '0',
         '-i', f'{disp}+0,0',
-        '-f', 'pulse', '-ac', '2', '-i', 'default',
-        '-vf', vf,
+        '-f', 'pulse', '-ac', '2', '-i', audio_source,
         '-c:v', 'libx264', '-preset', 'veryfast',
-        '-b:v', btr, '-maxrate', btr,
-        '-bufsize', str(int(btr.replace('k', '')) * 2) + 'k',
+        '-tune', 'zerolatency',
+        '-threads', str(threads),
+        '-b:v', btr, '-maxrate', btr, '-bufsize', buf,
+        '-g', str(int(fps) * 2),
+        '-sc_threshold', '0',
         '-pix_fmt', 'yuv420p',
         '-c:a', 'aac', '-b:a', abtr, '-ar', '44100',
-        '-f', 'flv', dest
+        '-f', 'flv',
+        '-flvflags', 'no_duration_filesize',
+        dest
     ]
-    name = out.get('name', oid)
-    tlog(tab['logs'], f'[{name}] -> {dest}')
-    proc = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    if 'output_procs' not in tab:
-        tab['output_procs'] = {}
-    tab['output_procs'][oid] = proc
-    for line in proc.stdout:
-        l = line.rstrip()
-        if l and ('frame=' in l or 'error' in l.lower()):
-            tab['logs'] = tab['logs'][-200:] + [f'[{name}] {l}']
-    proc.wait()
-    tlog(tab['logs'], f'[{name}] termino rc={proc.returncode}')
-    tab['output_procs'].pop(oid, None)
+    def do():
+        proc = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        c['rtmp_procs'][oid] = proc
+        clog(c, f'[{name}] RTMP iniciado PID={proc.pid}')
+        last_drop_count = 0
+        last_fps_warn   = 0
+        stream_start    = time.time()
+        for line in proc.stdout:
+            l = line.rstrip()
+            if not l: continue
+            if 'frame=' in l:
+                fps_match  = re.search(r'fps=\s*(\d+\.?\d*)', l)
+                drop_match = re.search(r'drop=\s*(\d+)', l)
+                dup_match  = re.search(r'dup=\s*(\d+)', l)
+                real_fps   = float(fps_match.group(1))  if fps_match  else None
+                drops      = int(drop_match.group(1))   if drop_match else 0
+                dups       = int(dup_match.group(1))    if dup_match  else 0
+                warmup_ok  = (time.time() - stream_start) > 20
+                target_fps = float(fps)
+                if warmup_ok and real_fps is not None and real_fps < target_fps * 0.8:
+                    now = time.time()
+                    if now - last_fps_warn > 10:
+                        last_fps_warn = now
+                        clog(c, f'⚠️ [{name}] FPS BAJO: {real_fps:.1f}/{target_fps:.0f}')
+                if warmup_ok and drops > last_drop_count:
+                    nuevos = drops - last_drop_count
+                    last_drop_count = drops
+                    clog(c, f'🔴 [{name}] DROP: {nuevos} frame(s) perdido(s) (total={drops})')
+                elif drops > last_drop_count:
+                    last_drop_count = drops
+            elif 'error' in l.lower() or 'broken pipe' in l.lower():
+                clog(c, f'🔴 [{name}] ERROR: {l}')
+        proc.wait()
+        clog(c, f'[{name}] RTMP termino rc={proc.returncode}')
+        c['rtmp_procs'].pop(oid, None)
+    threading.Thread(target=do, daemon=True).start()
+    # Arrancar rotacion automatica cada 4 horas
+    threading.Thread(target=rotation_loop, args=(cid, oid, 1.5), daemon=True).start()
 
-def run_stream_output(s, out, url):
-    dest = out['rtmp'].rstrip('/')
-    if out.get('key'):
-        dest += '/' + out['key']
-    res  = out.get('resolution', 'copy')
-    btr  = out.get('bitrate', '2500k')
-    abtr = out.get('audio_bitrate', '128k')
-    name = out.get('name', 'out')
-    headers = (
-        f'User-Agent: {machine["fingerprint"]["user_agent"]}\r\n'
-        'Accept: */*\r\n'
-    )
-    if res == 'copy':
-        cmd = [
-            'ffmpeg', '-re',
-            '-headers', headers,
-            '-i', url,
-            '-c', 'copy',
-            '-f', 'flv', dest
-        ]
-    else:
-        try:
-            rw, rh = res.split('x')
-        except:
-            rw, rh = '1280', '720'
-        cmd = [
-            'ffmpeg', '-re',
-            '-headers', headers,
-            '-i', url,
-            '-vf', f'scale={rw}:{rh}:force_original_aspect_ratio=decrease',
-            '-c:v', 'libx264', '-preset', 'veryfast', '-b:v', btr,
-            '-c:a', 'aac', '-b:a', abtr,
-            '-f', 'flv', dest
-        ]
-    tlog(s['logs'], f'[{name}] -> {dest}')
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    s['procs'][name] = proc
-    for line in proc.stdout:
-        l = line.rstrip()
-        if l and ('frame=' in l or 'error' in l.lower()):
-            s['logs'] = s['logs'][-200:] + [f'[{name}] {l}']
-    proc.wait()
-    tlog(s['logs'], f'[{name}] rc={proc.returncode}')
-    s['procs'].pop(name, None)
 
-def run_stream(sid):
-    s = streams.get(sid)
-    if not s:
-        return
+def make_reconnect_frame(dn):
+    """Genera una imagen de 'Reconectando...' usando ffmpeg"""
+    env = os.environ.copy()
+    env['DISPLAY'] = f':{dn}'
+    out = f'/tmp/reconectando_{dn}.png'
+    cmd = [
+        'ffmpeg', '-y',
+        '-f', 'lavfi',
+        '-i', f'color=c=black:size=1280x720:rate=30',
+        '-vf', "drawtext=fontsize=48:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-40:text='Espere un momento...',drawtext=fontsize=32:fontcolor=yellow:x=(w-text_w)/2:y=(h-text_h)/2+30:text='Estamos reconectando'",
+        '-frames:v', '1', out
+    ]
+    subprocess.run(cmd, capture_output=True, env=env)
+    return out
 
-    # Stream tipo screen: ya esta corriendo via restream_screen, solo marcar estado
-    if s.get('stream_type') == 'screen' or s.get('source','').startswith('screen://'):
-        s['status']     = 'running'
-        s['started_at'] = datetime.datetime.utcnow().isoformat()
-        tlog(s['logs'], 'Stream de pantalla activo')
-        # Esperar hasta que se detenga
-        while not s.get('stop_requested'):
-            # Verificar si el ffmpeg sigue corriendo
-            tab_id    = s.get('tab_id')
-            output_id = s.get('output_id')
-            if tab_id and output_id:
-                t = tabs.get(tab_id)
-                if t:
-                    proc = t.get('restream_procs', {}).get(output_id)
-                    if proc and proc.poll() is not None:
-                        tlog(s['logs'], 'FFmpeg termino')
-                        break
-            time.sleep(2)
-        s['status']         = 'stopped'
-        s['stop_requested'] = False
-        return
-
+def rotation_loop(cid, oid, interval_hours=4):
+    """Cada X horas pausa el stream 4 segundos con cartel y lo reanuda"""
+    c = computers.get(cid)
+    if not c: return
+    interval = interval_hours * 3600
+    time.sleep(interval)
     while True:
-        if s.get('stop_requested'):
-            break
-        s['status'] = 'extracting'
-        s['procs']  = {}
-        tlog(s['logs'], 'Extrayendo URL...')
-        url = get_stream_url(s['source'])
-        if not url:
-            tlog(s['logs'], 'No se pudo obtener URL')
-            if s.get('autoretry') and not s.get('stop_requested'):
-                iv = s.get('retry_interval', 30)
-                s['status'] = 'retrying'
-                tlog(s['logs'], f'Reintentando en {iv}s...')
-                for _ in range(iv * 2):
-                    if s.get('stop_requested'):
-                        break
-                    time.sleep(0.5)
-                continue
-            else:
-                s['status'] = 'error'
-                break
-        tlog(s['logs'], 'URL obtenida')
-        s['status']     = 'running'
-        s['started_at'] = datetime.datetime.utcnow().isoformat()
-        assigned = [o for o in outputs.values() if o.get('stream_id') == sid]
-        if not assigned:
-            assigned = s.get('outputs', [])
-        threads = [threading.Thread(target=run_stream_output, args=(s, o, url), daemon=True) for o in assigned]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-        if s.get('stop_requested'):
-            break
-        if s.get('autoretry'):
-            iv = s.get('retry_interval', 30)
-            s['status'] = 'retrying'
-            tlog(s['logs'], f'Reconectando en {iv}s...')
-            for _ in range(iv * 2):
-                if s.get('stop_requested'):
-                    break
-                time.sleep(0.5)
-            if s.get('stop_requested'):
-                break
-        else:
-            s['status'] = 'stopped'
-            break
-    s['status']         = 'stopped'
-    s['stop_requested'] = False
-    s['procs']          = {}
+        try:
+            c = computers.get(cid)
+            if not c or c.get('stop_requested'): break
+            if oid not in c.get('rtmp_procs', {}): break
+
+            out = outputs.get(oid)
+            if not out: break
+
+            clog(c, f'[{out.get("name",oid)}] 🔄 Rotacion automatica iniciando...')
+
+            # Matar ffmpeg actual
+            proc = c['rtmp_procs'].get(oid)
+            if proc:
+                try: proc.kill()
+                except: pass
+            c['rtmp_procs'].pop(oid, None)
+            time.sleep(0.5)
+
+            # Enviar cartel "Reconectando" al RTMP por 5 segundos
+            dn   = c.get('display_num')
+            dest = out['rtmp'].rstrip('/')
+            if out.get('key'): dest += '/' + out['key']
+            btr  = out.get('bitrate', '3000k')
+            abtr = out.get('audio_bitrate', '128k')
+            fps  = str(out.get('fps', 30))
+            env  = os.environ.copy()
+            env['DISPLAY'] = f':{dn}'
+
+            cartel_cmd = [
+                'ffmpeg', '-y',
+                '-f', 'lavfi',
+                '-i', f'color=c=black:size={WIN_W}x{WIN_H}:rate={fps}',
+                '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
+                '-vf', "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:fontsize=52:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-50:text='Por favor espere...',drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:fontsize=36:fontcolor=yellow:x=(w-text_w)/2:y=(h-text_h)/2+20:text='Estamos reconectando'",
+                '-c:v', 'libx264', '-preset', 'ultrafast',
+                '-b:v', btr, '-pix_fmt', 'yuv420p',
+                '-c:a', 'aac', '-b:a', abtr, '-ar', '44100',
+                '-t', '5',
+                '-f', 'flv',
+                '-flvflags', 'no_duration_filesize',
+                dest
+            ]
+            cartel_proc = subprocess.Popen(cartel_cmd, env=env,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            cartel_proc.wait()
+            clog(c, f'[{out.get("name",oid)}] Cartel enviado, reiniciando stream...')
+
+            # Reiniciar stream normal
+            time.sleep(0.5)
+            start_rtmp(cid, oid)
+            clog(c, f'[{out.get("name",oid)}] ✅ Stream reconectado')
+
+        except Exception as e:
+            clog(c, f'Error en rotacion: {e}')
+
+        time.sleep(interval)
 
 @app.after_request
 def cors(r):
@@ -562,491 +614,217 @@ def index():
 def vnc_files(f='vnc.html'):
     return send_from_directory('/app/vnc', f)
 
-@app.route('/hls/<tid>/<path:f>')
-def hls_file(tid, f):
-    return send_from_directory(os.path.join(HLS_DIR, tid), f)
+@app.route('/hls/<cid>/<path:f>')
+def hls_file(cid, f):
+    return send_from_directory(os.path.join(HLS_DIR, cid), f)
 
-@app.route('/preview/<tid>')
-def preview_page(tid):
-    t    = tabs.get(tid, {})
-    name = t.get('name', 'Preview')
-    src  = f'/hls/{tid}/live.m3u8'
-    return (f'''<!DOCTYPE html><html><head><meta charset=UTF-8><title>{name}</title>
-<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-<style>*{{margin:0;padding:0}}body{{background:#000;height:100vh;display:flex;flex-direction:column;font-family:monospace}}
-.bar{{background:#0a0a0a;padding:8px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #181818}}
-.dot{{width:7px;height:7px;border-radius:50%;background:#333}}.dot.on{{background:#00ff88;animation:p 1.5s infinite}}
-@keyframes p{{0%,100%{{opacity:1}}50%{{opacity:.3}}}}h1{{flex:1;font-size:12px;color:#ccc;letter-spacing:3px}}
-.st{{font-size:10px;color:#555}}.st.on{{color:#00ff88}}video{{flex:1;width:100%;object-fit:contain}}</style></head>
-<body><div class="bar"><div class="dot" id="d"></div><h1>{name}</h1><span class="st" id="s">CONECTANDO</span></div>
-<video id="v" autoplay muted playsinline controls></video>
-<script>var v=document.getElementById("v"),d=document.getElementById("d"),s=document.getElementById("s");
-function live(x){{d.className="dot"+(x?" on":"");s.className="st"+(x?" on":"");s.textContent=x?"EN VIVO":"SIN SENAL";}}
-if(Hls.isSupported()){{var h=new Hls({{liveSyncDurationCount:1,manifestLoadingRetryDelay:2000,manifestLoadingMaxRetry:99}});
-h.loadSource("{src}");h.attachMedia(v);
-h.on(Hls.Events.MANIFEST_PARSED,function(){{v.play().catch(function(){{}});live(true);}});
-h.on(Hls.Events.ERROR,function(e,dd){{if(dd.fatal){{live(false);setTimeout(function(){{h.loadSource("{src}");}},3000);}}}});}}
-else if(v.canPlayType("application/vnd.apple.mpegurl")){{v.src="{src}";v.play().catch(function(){{}});live(true);}}
-</script></body></html>'''), 200, {'Content-Type': 'text/html'}
-
-@app.route('/api/machine', methods=['GET', 'OPTIONS'])
+@app.route('/api/machine', methods=['GET','OPTIONS'])
 def api_machine():
     if request.method == 'OPTIONS': return '', 204
-    return J({**{k: machine[k] for k in ('status','width','height','fingerprint','started_at')},
-              'logs': machine['logs'][-60:],
-              'tabs_active':    sum(1 for t in tabs.values() if t['status'] == 'running'),
-              'streams_active': sum(1 for s in streams.values() if s['status'] == 'running'),
-              'displays_used':  sum(1 for t in tabs.values() if t.get('display_num')),
-              'displays_free':  DISPLAY_MAX - sum(1 for t in tabs.values() if t.get('display_num'))})
+    return J({'status': machine['status'], 'logs': machine['logs'][-60:],
+              'computers_active': sum(1 for c in computers.values() if c['status']=='running'),
+              'computers_max': MAX_COMPUTERS, 'started_at': machine['started_at']})
 
-@app.route('/api/machine/config', methods=['PUT', 'OPTIONS'])
-def api_machine_config():
+@app.route('/api/computers', methods=['GET','OPTIONS'])
+def api_computers_get():
     if request.method == 'OPTIONS': return '', 204
-    d = jreq()
-    if 'width'  in d: machine['width']  = int(d['width'])
-    if 'height' in d: machine['height'] = int(d['height'])
-    if 'fingerprint' in d: machine['fingerprint'].update(d['fingerprint'])
-    return J({'ok': True})
+    result = []
+    for c in computers.values():
+        wins = []
+        if c.get('display_num') and c['status'] == 'running':
+            for rw in get_windows(c['display_num']):
+                sw = next((w for w in c.get('windows', {}).values() if w.get('win_id') == rw['id']), None)
+                wins.append({
+                    'win_id': rw['id'], 'title': rw['title'],
+                    'x': rw['x'], 'y': rw['y'], 'w': rw['w'], 'h': rw['h'],
+                    'url': sw['url'] if sw else '',
+                    'wid': sw['id']  if sw else None,
+                })
+        result.append({
+            'id': c['id'], 'name': c['name'], 'status': c['status'],
+            'display_num': c.get('display_num'), 'vnc_port': c.get('vnc_port'),
+            'ws_port': c.get('ws_port'), 'start_url': c.get('start_url', ''),
+            'started_at': c.get('started_at'), 'logs': c.get('logs', [])[-80:],
+            'windows': wins, 'active_rtmp': list(c.get('rtmp_procs', {}).keys()),
+            'hls_active': bool(c.get('hls_proc') and c['hls_proc'].poll() is None),
+            'sink_name': c.get('sink_name', ''),
+        })
+    return J(result)
 
-@app.route('/api/credentials', methods=['GET', 'OPTIONS'])
-def api_creds():
-    if request.method == 'OPTIONS': return '', 204
-    return J({d: {**{k: v for k, v in c.items() if k != 'password'}, 'has_password': bool(c.get('password'))}
-              for d, c in credentials.items()})
-
-@app.route('/api/credentials/<domain>', methods=['GET', 'PUT', 'DELETE', 'OPTIONS'])
-def api_cred(domain):
-    if request.method == 'OPTIONS': return '', 204
-    if request.method == 'DELETE':
-        credentials.pop(domain, None); return J({'ok': True})
-    if request.method == 'GET':
-        c = credentials.get(domain, {})
-        return J({**c, 'password': '........' if c.get('password') else ''})
-    d = jreq()
-    if domain not in credentials: credentials[domain] = {}
-    if d.get('password') and d['password'] != '........':
-        credentials[domain]['password'] = d['password']
-    for k in ['username', 'login_url', 'notes', 'auto_login']:
-        if k in d: credentials[domain][k] = d[k]
-    credentials[domain].update({'domain': domain, 'updated_at': datetime.datetime.utcnow().isoformat()})
-    return J({'ok': True})
-
-@app.route('/api/credentials/sync', methods=['POST', 'OPTIONS'])
-def api_sync_cookies():
-    if request.method == 'OPTIONS': return '', 204
-    d       = jreq()
-    src_tid = d.get('from_tab')
-    if src_tid:
-        src = f'/tmp/nexus_profile_{src_tid}'
-        if os.path.exists(src):
-            try:
-                if os.path.exists(PROFILE_DIR): shutil.rmtree(PROFILE_DIR)
-                shutil.copytree(src, PROFILE_DIR)
-                mlog(f'Maestro actualizado desde pestana {src_tid}')
-            except Exception as e:
-                return J({'error': str(e)}, 500)
-    synced = []
-    for tid, tab in tabs.items():
-        if tid == src_tid: continue
-        dst = f'/tmp/nexus_profile_{tid}'
-        if os.path.exists(PROFILE_DIR):
-            try:
-                if os.path.exists(dst): shutil.rmtree(dst)
-                shutil.copytree(PROFILE_DIR, dst)
-                synced.append(tid)
-            except: pass
-    mlog(f'Cookies sincronizadas a {len(synced)} pestanas')
-    return J({'ok': True, 'synced': synced})
-
-@app.route('/api/tabs', methods=['GET', 'POST', 'OPTIONS'])
-def api_tabs():
-    if request.method == 'OPTIONS': return '', 204
-    if request.method == 'GET':
-        return J([{k: t[k] for k in ('id','name','url','status','fps','load_wait','autoretry','retry_interval','started_at','pid')}
-                  | {'logs':       t.get('logs', [])[-60:],
-                     'display_num':t.get('display_num'),
-                     'vnc_port':   t.get('vnc_port'),
-                     'ws_port':    t.get('ws_port'),
-                     'hls_active': bool(t.get('hls_proc') and t['hls_proc'].poll() is None),
-                     'extracted_urls': t.get('extracted_urls', []),
-                     'extracted_title': t.get('extracted_title', '')}
-                  for t in tabs.values()])
+@app.route('/api/computers', methods=['POST'])
+def api_computers_post():
     d   = jreq()
-    tid = str(uuid.uuid4())[:8]
-    tabs[tid] = {
-        'id': tid, 'name': d.get('name', 'Tab'), 'url': d['url'],
-        'status': 'stopped', 'fps': d.get('fps', 30),
-        'load_wait': d.get('load_wait', 8),
-        'autoretry': d.get('autoretry', False),
-        'retry_interval': d.get('retry_interval', 15),
-        'chrome_proc': None, 'xvfb_proc': None,
-        'hls_proc': None, 'output_procs': {}, 'restream_procs': {},
-        'logs': [], 'stop_requested': False,
-        'started_at': None, 'pid': None,
-        'display_num': None, 'vnc_port': None, 'ws_port': None,
-        'extracted_urls': [], 'extracted_title': ''
+    cid = str(uuid.uuid4())[:8]
+    computers[cid] = {
+        'id': cid, 'name': d.get('name', 'Computadora'),
+        'status': 'stopped', 'start_url': d.get('start_url', 'about:blank'),
+        'display_num': None, 'xvfb_proc': None, 'firefox_proc': None,
+        'vnc_port': None, 'ws_port': None, 'sink_name': None,
+        'windows': {}, 'rtmp_procs': {}, 'hls_proc': None,
+        'logs': [], 'stop_requested': False, 'started_at': None
     }
-    return J({'ok': True, 'id': tid})
+    return J({'ok': True, 'id': cid})
 
-@app.route('/api/tabs/<tid>', methods=['PUT', 'DELETE', 'OPTIONS'])
-def api_tab(tid):
+@app.route('/api/computers/<cid>', methods=['DELETE','OPTIONS'])
+def api_computer_delete(cid):
     if request.method == 'OPTIONS': return '', 204
-    if request.method == 'DELETE':
-        stop_tab(tid); tabs.pop(tid, None); return J({'ok': True})
-    t = tabs.get(tid)
-    if not t: return J({'error': 'No encontrada'}, 404)
-    if t['status'] in ('running', 'loading'):
-        return J({'error': 'Deten la pestana antes de editar'}, 400)
-    d = jreq()
-    for k in ['name', 'url', 'fps', 'load_wait', 'autoretry', 'retry_interval']:
-        if k in d: t[k] = d[k]
+    c = computers.get(cid)
+    if c:
+        c['stop_requested'] = True
+        cleanup_computer(cid)
+        computers.pop(cid, None)
     return J({'ok': True})
 
-@app.route('/api/tabs/<tid>/start', methods=['POST', 'OPTIONS'])
-def api_tab_start(tid):
+@app.route('/api/computers/<cid>/start', methods=['POST','OPTIONS'])
+def api_computer_start(cid):
     if request.method == 'OPTIONS': return '', 204
-    t = tabs.get(tid)
-    if not t: return J({'error': 'No encontrada'}, 404)
-    if t['status'] in ('running', 'loading'): return J({'error': 'Ya activa'})
-    used = sum(1 for x in tabs.values() if x.get('display_num'))
-    if used >= DISPLAY_MAX: return J({'error': f'Maximo {DISPLAY_MAX} pestanas'}, 400)
-    t['stop_requested'] = False
-    t['logs'] = [f'[{ts()}] Iniciando...']
-    threading.Thread(target=run_tab, args=(tid,), daemon=True).start()
+    c = computers.get(cid)
+    if not c: return J({'error': 'No encontrada'}, 404)
+    if c['status'] == 'running': return J({'error': 'Ya activa'})
+    active = sum(1 for x in computers.values() if x.get('display_num'))
+    if active >= MAX_COMPUTERS: return J({'error': f'Maximo {MAX_COMPUTERS} computadoras'}, 400)
+    c['stop_requested'] = False
+    c['logs'] = [f'[{ts()}] Iniciando...']
+    threading.Thread(target=run_computer, args=(cid,), daemon=True).start()
     return J({'ok': True})
 
-@app.route('/api/tabs/<tid>/stop', methods=['POST', 'OPTIONS'])
-def api_tab_stop(tid):
+@app.route('/api/computers/<cid>/stop', methods=['POST','OPTIONS'])
+def api_computer_stop(cid):
     if request.method == 'OPTIONS': return '', 204
-    stop_tab(tid); return J({'ok': True})
-
-@app.route('/api/tabs/<tid>/logs', methods=['GET', 'OPTIONS'])
-def api_tab_logs(tid):
-    if request.method == 'OPTIONS': return '', 204
-    t = tabs.get(tid)
-    return J({'logs': t.get('logs', []) if t else []})
-
-@app.route('/api/tabs/<tid>/vnc', methods=['GET', 'OPTIONS'])
-def api_tab_vnc(tid):
-    if request.method == 'OPTIONS': return '', 204
-    t = tabs.get(tid)
-    if not t or not t.get('ws_port'):
-        return J({'error': 'VNC no disponible'}, 404)
-    return J({'ws_port': t['ws_port'], 'vnc_port': t['vnc_port']})
-
-@app.route('/api/tabs/<tid>/hls/start', methods=['POST', 'OPTIONS'])
-def api_tab_hls_start(tid):
-    if request.method == 'OPTIONS': return '', 204
-    t = tabs.get(tid)
-    if not t: return J({'error': 'No encontrada'}, 404)
-    if t.get('hls_proc') and t['hls_proc'].poll() is None:
-        return J({'ok': True, 'msg': 'Ya grabando'})
-    if t['status'] != 'running':
-        return J({'error': 'Pestana no activa'}, 400)
-    threading.Thread(target=start_hls, args=(tid,), daemon=True).start()
+    c = computers.get(cid)
+    if not c: return J({'ok': True})
+    c['stop_requested'] = True
     return J({'ok': True})
 
-@app.route('/api/tabs/<tid>/hls/stop', methods=['POST', 'OPTIONS'])
-def api_tab_hls_stop(tid):
+@app.route('/api/computers/<cid>/open', methods=['POST','OPTIONS'])
+def api_computer_open(cid):
     if request.method == 'OPTIONS': return '', 204
-    t = tabs.get(tid)
-    if not t: return J({'ok': True})
-    if t.get('hls_proc'):
-        try: t['hls_proc'].kill()
-        except: pass
-        t['hls_proc'] = None
-    try: shutil.rmtree(os.path.join(HLS_DIR, tid))
-    except: pass
-    return J({'ok': True})
+    c = computers.get(cid)
+    if not c: return J({'error': 'No encontrada'}, 404)
+    if c['status'] != 'running': return J({'error': 'No activa'}, 400)
+    d   = jreq()
+    url = d.get('url', 'about:blank')
+    if not url.startswith('http'): url = 'https://' + url
+    wid = open_window(cid, url)
+    return J({'ok': True, 'window_id': wid})
 
-@app.route('/api/tabs/<tid>/extract', methods=['POST', 'OPTIONS'])
-def api_tab_extract(tid):
+@app.route('/api/computers/<cid>/windows/refresh', methods=['POST','OPTIONS'])
+def api_windows_refresh(cid):
     if request.method == 'OPTIONS': return '', 204
-    t = tabs.get(tid)
-    if not t: return J({'error': 'No encontrada'}, 404)
-    if t['status'] != 'running':
-        return J({'error': 'Pestana no activa'}, 400)
+    c = computers.get(cid)
+    if not c or not c.get('display_num'): return J([])
+    return J(get_windows(c['display_num']))
 
-    def do_extract():
-        tlog(t['logs'], 'Extrayendo URL de video...')
-        tab_profile = f'/tmp/nexus_profile_{tid}'
-        url = t.get('url', '')
-        tlog(t['logs'], f'Analizando: {url}')
-        found = []
-
-        tlog(t['logs'], 'Buscando en cache del navegador...')
-        try:
-            for f_path in glob.glob(f'{tab_profile}/**/*', recursive=True):
-                try:
-                    if os.path.getsize(f_path) > 50000:
-                        continue
-                    with open(f_path, 'rb') as cf:
-                        data = cf.read(3000)
-                        text = data.decode('utf-8', errors='ignore')
-                        matches = re.findall(r'https?://[^\s<>"\']+\.m3u8[^\s<>"\']*', text)
-                        for m in matches:
-                            if m not in found:
-                                found.append(m)
-                                tlog(t['logs'], f'Cache: {m[:70]}')
-                except:
-                    pass
-        except Exception as e:
-            tlog(t['logs'], f'Cache error: {e}')
-
-        tlog(t['logs'], 'Probando yt-dlp...')
-        try:
-            yt_cmd = ['yt-dlp', '--user-agent', machine['fingerprint']['user_agent'],
-                      '-j', '--no-playlist', '--no-warnings', url]
-            cookies_db = f'{tab_profile}/cookies.sqlite'
-            if os.path.exists(cookies_db):
-                yt_cmd += ['--cookies-from-browser', f'firefox:{tab_profile}']
-            result = subprocess.run(yt_cmd, capture_output=True, text=True, timeout=25)
-            if result.returncode == 0:
-                info    = json.loads(result.stdout)
-                formats = info.get('formats', [])
-                for fmt in formats:
-                    if fmt.get('url') and fmt.get('vcodec') != 'none':
-                        found.append({
-                            'format_id': fmt.get('format_id', ''),
-                            'ext':       fmt.get('ext', ''),
-                            'quality':   fmt.get('format_note', str(fmt.get('height', ''))),
-                            'url':       fmt.get('url', ''),
-                            'vcodec':    fmt.get('vcodec', ''),
-                            'acodec':    fmt.get('acodec', ''),
-                            'tbr':       fmt.get('tbr', 0),
-                        })
-                tlog(t['logs'], f'yt-dlp: {len(formats)} formatos')
-        except Exception as e:
-            tlog(t['logs'], f'yt-dlp: {e}')
-
-        tlog(t['logs'], 'Curl + regex...')
-        try:
-            r = subprocess.run(
-                ['curl', '-s', '-L', '--max-time', '10',
-                 '-H', f'User-Agent: {machine["fingerprint"]["user_agent"]}',
-                 '-H', f'Referer: {url}', url],
-                capture_output=True, text=True, timeout=15
-            )
-            for pat in [r'https?://[^\s<>]+\.m3u8[^\s<>]*', r'https?://[^\s<>]+/manifest[^\s<>]*']:
-                for match in re.findall(pat, r.stdout):
-                    clean = match.strip().rstrip("',;\"")
-                    if clean and clean not in [x if isinstance(x, str) else x.get('url','') for x in found]:
-                        found.append(clean)
-                        tlog(t['logs'], f'Regex: {clean[:70]}')
-        except Exception as e:
-            tlog(t['logs'], f'Curl: {e}')
-
-        video_urls = []
-        seen = set()
-        for item in found:
-            if isinstance(item, str):
-                if item not in seen:
-                    seen.add(item)
-                    video_urls.append({'format_id':'direct','ext':'m3u8','quality':'AUTO','url':item,'vcodec':'','acodec':'','tbr':0})
-            elif isinstance(item, dict):
-                u = item.get('url','')
-                if u and u not in seen:
-                    seen.add(u)
-                    video_urls.append(item)
-
-        video_urls.sort(key=lambda x: x.get('tbr') or 0, reverse=True)
-        t['extracted_urls']  = video_urls[:15]
-        t['extracted_title'] = url
-
-        if video_urls:
-            tlog(t['logs'], f'Encontradas {len(video_urls)} URLs')
-        else:
-            tlog(t['logs'], 'Sin URLs - usa STREAM PANTALLA para captura directa')
-            t['extracted_urls'] = []
-
-    threading.Thread(target=do_extract, daemon=True).start()
-    return J({'ok': True})
-
-@app.route('/api/tabs/<tid>/extracted', methods=['GET', 'OPTIONS'])
-def api_tab_extracted(tid):
+@app.route('/api/computers/<cid>/windows/<win_id>/focus', methods=['POST','OPTIONS'])
+def api_window_focus(cid, win_id):
     if request.method == 'OPTIONS': return '', 204
-    t = tabs.get(tid)
-    if not t: return J({'urls': [], 'title': ''})
-    return J({'urls': t.get('extracted_urls', []), 'title': t.get('extracted_title', '')})
-
-@app.route('/api/tabs/<tid>/restream', methods=['POST', 'OPTIONS'])
-def api_tab_restream(tid):
-    if request.method == 'OPTIONS': return '', 204
-    t = tabs.get(tid)
-    if not t: return J({'error': 'No encontrada'}, 404)
-    d          = jreq()
-    stream_url = d.get('url')
-    output_id  = d.get('output_id')
-    if not stream_url: return J({'error': 'URL requerida'}, 400)
-    if not output_id or output_id not in outputs:
-        return J({'error': 'Salida RTMP no encontrada'}, 400)
-    out  = outputs[output_id]
-    dest = out['rtmp'].rstrip('/')
-    if out.get('key'): dest += '/' + out['key']
-    btr  = out.get('bitrate', '3000k')
-    abtr = out.get('audio_bitrate', '128k')
-    res  = out.get('resolution', 'copy')
-    name = out.get('name', output_id)
-    headers = (
-        f'User-Agent: {machine["fingerprint"]["user_agent"]}\r\n'
-        f'Referer: {t.get("url","")}\r\n'
-        'Accept: */*\r\n'
-    )
-
-    def do_restream():
-        if res == 'copy':
-            cmd = ['ffmpeg', '-re', '-headers', headers, '-i', stream_url, '-c', 'copy', '-f', 'flv', dest]
-        else:
-            try: rw, rh = res.split('x')
-            except: rw, rh = '1280', '720'
-            cmd = [
-                'ffmpeg', '-re', '-headers', headers, '-i', stream_url,
-                '-vf', f'scale={rw}:{rh}:force_original_aspect_ratio=decrease,pad={rw}:{rh}:(ow-iw)/2:(oh-ih)/2:black',
-                '-c:v', 'libx264', '-preset', 'veryfast',
-                '-b:v', btr, '-maxrate', btr,
-                '-bufsize', str(int(btr.replace('k',''))*2)+'k',
-                '-pix_fmt', 'yuv420p',
-                '-c:a', 'aac', '-b:a', abtr, '-ar', '44100',
-                '-f', 'flv', dest
-            ]
-        if 'restream_procs' not in t: t['restream_procs'] = {}
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        t['restream_procs'][output_id] = proc
-        tlog(t['logs'], f'Restream [{name}] PID={proc.pid} -> {dest}')
-        for line in proc.stdout:
-            l = line.rstrip()
-            if l and ('frame=' in l or 'error' in l.lower() or 'fps=' in l):
-                t['logs'] = t['logs'][-200:] + [f'[{name}] {l}']
-        proc.wait()
-        tlog(t['logs'], f'Restream [{name}] termino rc={proc.returncode}')
-        t['restream_procs'].pop(output_id, None)
-
-    threading.Thread(target=do_restream, daemon=True).start()
-    tlog(t['logs'], f'Iniciando restream hacia {name}')
-    return J({'ok': True})
-
-@app.route('/api/tabs/<tid>/restream_screen', methods=['POST', 'OPTIONS'])
-def api_restream_screen(tid):
-    if request.method == 'OPTIONS': return '', 204
-    t = tabs.get(tid)
-    if not t: return J({'error': 'No encontrada'}, 404)
-    if t['status'] != 'running':
-        return J({'error': 'Pestana no activa'}, 400)
-    d         = jreq()
-    output_id = d.get('output_id')
-    if not output_id or output_id not in outputs:
-        return J({'error': 'Salida RTMP no encontrada'}, 400)
-    out  = outputs[output_id]
-    dest = out['rtmp'].rstrip('/')
-    if out.get('key'): dest += '/' + out['key']
-    btr  = out.get('bitrate', '3000k')
-    abtr = out.get('audio_bitrate', '128k')
-    res  = out.get('resolution', 'source')
-    name = out.get('name', output_id)
-    fps  = str(t.get('fps', 30))
-    w    = str(machine['width'])
-    h    = str(machine['height'])
-    disp = f':{t["display_num"]}'
-    vf   = f'scale={w}:{h}'
-    if res not in ('source', 'copy', ''):
-        try:
-            rw, rh = res.split('x')
-            vf = f'scale={rw}:{rh}:force_original_aspect_ratio=decrease,pad={rw}:{rh}:(ow-iw)/2:(oh-ih)/2:black'
-        except: pass
+    c = computers.get(cid)
+    if not c or not c.get('display_num'): return J({'error': 'No activa'}, 400)
+    dn  = c['display_num']
     env = os.environ.copy()
-    env['DISPLAY'] = disp
-    if 'restream_procs' not in t: t['restream_procs'] = {}
-    if output_id in t['restream_procs']:
-        try: t['restream_procs'][output_id].kill()
-        except: pass
-
-    def do_screen():
-        cmd = [
-            'ffmpeg', '-y',
-            '-f', 'x11grab', '-r', fps, '-s', f'{w}x{h}', '-i', f'{disp}+0,0',
-            '-f', 'pulse', '-ac', '2', '-i', 'default',
-            '-vf', vf,
-            '-c:v', 'libx264', '-preset', 'veryfast',
-            '-b:v', btr, '-maxrate', btr,
-            '-bufsize', str(int(btr.replace('k',''))*2)+'k',
-            '-pix_fmt', 'yuv420p',
-            '-c:a', 'aac', '-b:a', abtr, '-ar', '44100',
-            '-f', 'flv', dest
-        ]
-        proc = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        t['restream_procs'][output_id] = proc
-        tlog(t['logs'], f'Screen restream [{name}] PID={proc.pid}')
-        for line in proc.stdout:
-            l = line.rstrip()
-            if l and ('frame=' in l or 'error' in l.lower() or 'fps=' in l):
-                t['logs'] = t['logs'][-200:] + [f'[{name}] {l}']
-        proc.wait()
-        tlog(t['logs'], f'Screen restream [{name}] termino rc={proc.returncode}')
-        t['restream_procs'].pop(output_id, None)
-
-    threading.Thread(target=do_screen, daemon=True).start()
-    return J({'ok': True})
-
-@app.route('/api/tabs/<tid>/restream_screen/stop', methods=['POST', 'OPTIONS'])
-def api_restream_screen_stop(tid):
-    if request.method == 'OPTIONS': return '', 204
-    t = tabs.get(tid)
-    if not t: return J({'ok': True})
-    d = jreq()
-    output_id = d.get('output_id')
-    if output_id and output_id in t.get('restream_procs', {}):
-        try: t['restream_procs'][output_id].kill()
-        except: pass
-        t['restream_procs'].pop(output_id, None)
-        tlog(t['logs'], 'Screen restream detenido')
-    return J({'ok': True})
-
-@app.route('/api/tabs/<tid>/export_cookies', methods=['POST', 'OPTIONS'])
-def api_export_cookies(tid):
-    if request.method == 'OPTIONS': return '', 204
-    t = tabs.get(tid)
-    if not t: return J({'error': 'No encontrada'}, 404)
-    d      = jreq()
-    domain = d.get('domain', 'google.com')
-    tab_profile = f'/tmp/nexus_profile_{tid}'
-    cookies_db  = os.path.join(tab_profile, 'cookies.sqlite')
-    if not os.path.exists(cookies_db):
-        if os.path.exists(PROFILE_DIR):
-            try:
-                if os.path.exists(PROFILE_DIR): shutil.rmtree(PROFILE_DIR)
-                shutil.copytree(tab_profile, PROFILE_DIR)
-                mlog(f'Maestro actualizado desde {tid}')
-                return J({'ok': True, 'msg': 'Perfil guardado como maestro'})
-            except Exception as e:
-                return J({'error': str(e)}, 500)
-        return J({'error': 'No hay cookies aun'}, 404)
+    env['DISPLAY'] = f':{dn}'
     try:
-        import shutil as sh
-        tmp = f'/tmp/cookies_export_{tid}'
-        sh.copy2(cookies_db, tmp)
-        result = subprocess.run(
-            ['sqlite3', tmp, f"SELECT name,value,host,path FROM moz_cookies WHERE host LIKE '%{domain.split('.')[-2]}%'"],
-            capture_output=True, text=True, timeout=10
-        )
-        os.remove(tmp)
-        cookies = []
-        for line in result.stdout.strip().split('\n'):
-            if not line: continue
-            parts = line.split('|')
-            if len(parts) >= 4:
-                cookies.append({'name': parts[0], 'value': parts[1], 'domain': parts[2], 'path': parts[3]})
-        if domain not in credentials: credentials[domain] = {'domain': domain}
-        credentials[domain]['cookies']    = json.dumps(cookies)
-        credentials[domain]['auto_login'] = True
-        credentials[domain]['updated_at'] = datetime.datetime.utcnow().isoformat()
-        if os.path.exists(PROFILE_DIR): shutil.rmtree(PROFILE_DIR)
-        shutil.copytree(tab_profile, PROFILE_DIR)
-        mlog(f'Cookies + perfil guardados: {domain}')
-        return J({'ok': True, 'cookies_count': len(cookies), 'domain': domain})
+        subprocess.run(['xdotool', 'windowfocus', '--sync', win_id], env=env, capture_output=True, timeout=3)
+        subprocess.run(['xdotool', 'windowraise', win_id], env=env, capture_output=True, timeout=3)
+        subprocess.run(['xdotool', 'windowmove', '--sync', win_id, '0', '0'], env=env, capture_output=True, timeout=3)
+        subprocess.run(['xdotool', 'windowsize', '--sync', win_id, str(WIN_W), str(WIN_H)], env=env, capture_output=True, timeout=3)
+        clog(c, f'Ventana {win_id} enfocada')
+        return J({'ok': True, 'ws_port': c.get('ws_port')})
     except Exception as e:
         return J({'error': str(e)}, 500)
 
-@app.route('/api/outputs', methods=['GET', 'POST', 'OPTIONS'])
+@app.route('/api/computers/<cid>/windows/<wid>/close', methods=['POST','OPTIONS'])
+def api_window_close(cid, wid):
+    if request.method == 'OPTIONS': return '', 204
+    c = computers.get(cid)
+    if not c: return J({'error': 'No encontrada'}, 404)
+    w = c.get('windows', {}).get(wid)
+    if w:
+        win_id = w.get('win_id')
+        if win_id:
+            env = os.environ.copy()
+            env['DISPLAY'] = f':{c.get("display_num")}'
+            try: subprocess.run(['xdotool', 'windowclose', win_id], env=env, capture_output=True, timeout=3)
+            except: pass
+        c['windows'].pop(wid, None)
+        clog(c, 'Pestana cerrada')
+    return J({'ok': True})
+
+@app.route('/api/computers/<cid>/save_profile', methods=['POST','OPTIONS'])
+def api_save_profile(cid):
+    if request.method == 'OPTIONS': return '', 204
+    save_profile(cid)
+    return J({'ok': True, 'msg': 'Perfil guardado'})
+
+@app.route('/api/computers/<cid>/set_master', methods=['POST','OPTIONS'])
+def api_set_master(cid):
+    if request.method == 'OPTIONS': return '', 204
+    ok, msg = set_master_profile(cid)
+    return J({'ok': ok, 'msg': msg})
+
+@app.route('/api/computers/<cid>/rtmp/start', methods=['POST','OPTIONS'])
+def api_rtmp_start(cid):
+    if request.method == 'OPTIONS': return '', 204
+    c = computers.get(cid)
+    if not c: return J({'error': 'No encontrada'}, 404)
+    if c['status'] != 'running': return J({'error': 'No activa'}, 400)
+    d      = jreq()
+    oid    = d.get('output_id')
+    win_id = d.get('win_id')
+    if not oid or oid not in outputs: return J({'error': 'Salida no encontrada'}, 400)
+    threading.Thread(target=start_rtmp, args=(cid, oid, win_id), daemon=True).start()
+    return J({'ok': True})
+
+@app.route('/api/computers/<cid>/rtmp/stop', methods=['POST','OPTIONS'])
+def api_rtmp_stop(cid):
+    if request.method == 'OPTIONS': return '', 204
+    c = computers.get(cid)
+    if not c: return J({'ok': True})
+    oid = jreq().get('output_id')
+    if oid and oid in c.get('rtmp_procs', {}):
+        try: c['rtmp_procs'][oid].kill()
+        except: pass
+        c['rtmp_procs'].pop(oid, None)
+        clog(c, 'RTMP detenido')
+    return J({'ok': True})
+
+@app.route('/api/computers/<cid>/hls/start', methods=['POST','OPTIONS'])
+def api_hls_start(cid):
+    if request.method == 'OPTIONS': return '', 204
+    c = computers.get(cid)
+    if not c or c['status'] != 'running': return J({'error': 'No activa'}, 400)
+    if c.get('hls_proc') and c['hls_proc'].poll() is None: return J({'ok': True})
+    hls_path = os.path.join(HLS_DIR, cid)
+    os.makedirs(hls_path, exist_ok=True)
+    dn  = c['display_num']
+    env = os.environ.copy()
+    env['DISPLAY'] = f':{dn}'
+    cmd = ['ffmpeg', '-y',
+           '-f', 'x11grab', '-r', '4', '-s', f'{WIN_W}x{WIN_H}', '-i', f':{dn}+0,0',
+           '-vf', 'scale=640:360',
+           '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
+           '-b:v', '300k', '-g', '8',
+           '-f', 'hls', '-hls_time', '1', '-hls_list_size', '4',
+           '-hls_flags', 'delete_segments+omit_endlist',
+           os.path.join(hls_path, 'live.m3u8')]
+    proc = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    c['hls_proc'] = proc
+    clog(c, f'HLS PID={proc.pid}')
+    return J({'ok': True})
+
+@app.route('/api/computers/<cid>/hls/stop', methods=['POST','OPTIONS'])
+def api_hls_stop(cid):
+    if request.method == 'OPTIONS': return '', 204
+    c = computers.get(cid)
+    if c and c.get('hls_proc'):
+        try: c['hls_proc'].kill()
+        except: pass
+        c['hls_proc'] = None
+    try: shutil.rmtree(os.path.join(HLS_DIR, cid))
+    except: pass
+    return J({'ok': True})
+
+@app.route('/api/outputs', methods=['GET','POST','OPTIONS'])
 def api_outputs():
     if request.method == 'OPTIONS': return '', 204
     if request.method == 'GET': return J(list(outputs.values()))
@@ -1054,100 +832,58 @@ def api_outputs():
     oid = str(uuid.uuid4())[:8]
     outputs[oid] = {
         'id': oid, 'name': d.get('name', 'Salida'),
-        'rtmp': d['rtmp'], 'key': d.get('key', ''),
-        'resolution': d.get('resolution', 'source'),
+        'rtmp': d.get('rtmp', ''), 'key': d.get('key', ''),
         'bitrate': d.get('bitrate', '3000k'),
         'audio_bitrate': d.get('audio_bitrate', '128k'),
-        'tab_id': d.get('tab_id'), 'stream_id': d.get('stream_id'),
+        'fps': d.get('fps', 30),
         'created_at': datetime.datetime.utcnow().isoformat()
     }
     return J({'ok': True, 'id': oid})
 
-@app.route('/api/outputs/<oid>', methods=['PUT', 'DELETE', 'OPTIONS'])
+@app.route('/api/outputs/<oid>', methods=['PUT','DELETE','OPTIONS'])
 def api_output(oid):
     if request.method == 'OPTIONS': return '', 204
     if request.method == 'DELETE':
-        outputs.pop(oid, None); return J({'ok': True})
+        outputs.pop(oid, None)
+        return J({'ok': True})
     o = outputs.get(oid)
     if not o: return J({'error': 'No encontrada'}, 404)
-    o.update(jreq()); return J({'ok': True})
+    o.update(jreq())
+    return J({'ok': True})
 
-@app.route('/api/streams', methods=['GET', 'POST', 'OPTIONS'])
-def api_streams():
+@app.route('/api/cookies/sync', methods=['POST','OPTIONS'])
+def api_cookies_sync():
     if request.method == 'OPTIONS': return '', 204
-    if request.method == 'GET':
-        return J([{k: s[k] for k in ('id','name','source','status','autoretry','retry_interval','started_at')}
-                  | {'logs':        s.get('logs', [])[-60:],
-                     'tab_id':      s.get('tab_id'),
-                     'output_id':   s.get('output_id'),
-                     'stream_type': s.get('stream_type','url')}
-                  for s in streams.values()])
+    collect_cookies()
+    distribute_cookies()
+    return J({'ok': True, 'msg': 'Cookies sincronizadas'})
+
+@app.route('/api/cookies/save', methods=['POST','OPTIONS'])
+def api_cookies_save():
+    if request.method == 'OPTIONS': return '', 204
     d   = jreq()
-    sid = str(uuid.uuid4())[:8]
-    streams[sid] = {
-        'id': sid, 'name': d.get('name', 'Stream'),
-        'source': d.get('source',''), 'status': 'stopped',
-        'procs': {}, 'logs': [],
-        'autoretry': d.get('autoretry', False),
-        'retry_interval': d.get('retry_interval', 30),
-        'stop_requested': False, 'started_at': None,
-        'outputs': d.get('outputs', []),
-        'tab_id':      d.get('tab_id'),
-        'output_id':   d.get('output_id'),
-        'stream_type': d.get('stream_type', 'url'),
-        'bitrate':     d.get('bitrate', '3000k'),
-    }
-    return J({'ok': True, 'id': sid})
+    cid = d.get('cid')
+    if not cid: return J({'error': 'cid requerido'}, 400)
+    src = os.path.join(f'/tmp/nexus_profile_{cid}', 'cookies.sqlite')
+    if not os.path.exists(src): return J({'error': 'Sin cookies aun'}, 400)
+    try:
+        shutil.copy2(src, '/app/master_cookies.sqlite')
+        distribute_cookies()
+        return J({'ok': True, 'msg': 'Cookies guardadas y distribuidas'})
+    except Exception as e:
+        return J({'error': str(e)}, 500)
 
-@app.route('/api/streams/<sid>', methods=['PUT', 'DELETE', 'OPTIONS'])
-def api_stream(sid):
+@app.route('/api/cookies/status', methods=['GET','OPTIONS'])
+def api_cookies_status():
     if request.method == 'OPTIONS': return '', 204
-    if request.method == 'DELETE':
-        s = streams.pop(sid, None)
-        if s:
-            s['stop_requested'] = True
-            for p in list(s.get('procs', {}).values()):
-                try: p.kill()
-                except: pass
-        return J({'ok': True})
-    s = streams.get(sid)
-    if not s: return J({'error': 'No encontrado'}, 404)
-    if s['status'] in ('running', 'extracting'):
-        return J({'error': 'Deten antes de editar'}, 400)
-    d = jreq()
-    for k in ['name', 'source', 'autoretry', 'retry_interval']:
-        if k in d: s[k] = d[k]
-    return J({'ok': True})
-
-@app.route('/api/streams/<sid>/start', methods=['POST', 'OPTIONS'])
-def api_stream_start(sid):
-    if request.method == 'OPTIONS': return '', 204
-    s = streams.get(sid)
-    if not s: return J({'error': 'No encontrado'}, 404)
-    if s['status'] in ('running', 'extracting', 'retrying'): return J({'error': 'Ya corriendo'})
-    s['stop_requested'] = False
-    s['logs'] = [f'[{ts()}] Iniciando...']
-    threading.Thread(target=run_stream, args=(sid,), daemon=True).start()
-    return J({'ok': True})
-
-@app.route('/api/streams/<sid>/stop', methods=['POST', 'OPTIONS'])
-def api_stream_stop(sid):
-    if request.method == 'OPTIONS': return '', 204
-    s = streams.get(sid)
-    if s:
-        s['stop_requested'] = True; s['autoretry'] = False
-        for p in list(s.get('procs', {}).values()):
-            try: p.kill()
-            except: pass
-        s['procs'] = {}; s['status'] = 'stopped'
-    return J({'ok': True})
-
-@app.route('/api/streams/<sid>/logs', methods=['GET', 'OPTIONS'])
-def api_stream_logs(sid):
-    if request.method == 'OPTIONS': return '', 204
-    s = streams.get(sid)
-    return J({'logs': s.get('logs', []) if s else []})
+    master = '/app/master_cookies.sqlite'
+    has    = os.path.exists(master)
+    size   = os.path.getsize(master) if has else 0
+    master_profile = '/app/master_profile'
+    has_mp = os.path.exists(master_profile)
+    return J({'has_master': has, 'size_kb': round(size/1024, 1),
+              'has_master_profile': has_mp})
 
 if __name__ == '__main__':
-    mlog('NEXUS v3 Firefox - iniciado')
     app.run(host='0.0.0.0', port=8080, threaded=True)
+# PATCH - sobrescribir start_pulse para no matar pulseaudio global
