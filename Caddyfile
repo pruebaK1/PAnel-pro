@@ -1,0 +1,29 @@
+myprueba.duckdns.org {
+    handle /ws/6080/* {
+        uri strip_prefix /ws/6080
+        reverse_proxy nexus:6080
+    }
+    handle /ws/6081/* {
+        uri strip_prefix /ws/6081
+        reverse_proxy nexus:6081
+    }
+    handle /ws/6082/* {
+        uri strip_prefix /ws/6082
+        reverse_proxy nexus:6082
+    }
+    handle /ws/6083/* {
+        uri strip_prefix /ws/6083
+        reverse_proxy nexus:6083
+    }
+    handle /ws/6084/* {
+        uri strip_prefix /ws/6084
+        reverse_proxy nexus:6084
+    }
+    handle /ws/6085/* {
+        uri strip_prefix /ws/6085
+        reverse_proxy nexus:6085
+    }
+    handle {
+        reverse_proxy nexus:8080
+    }
+}
