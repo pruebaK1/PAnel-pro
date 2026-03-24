@@ -14,13 +14,14 @@ body{background:var(--bg0);color:var(--white);font-family:var(--mono);font-size:
 .nav-item{padding:0 14px;height:42px;display:flex;align-items:center;cursor:pointer;color:var(--muted);letter-spacing:1.5px;font-size:10px;border-bottom:2px solid transparent;}
 .nav-item:hover{color:var(--white);}
 .nav-item.active{color:var(--amber);border-bottom-color:var(--amber);}
-.nav-right{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:9px;color:var(--dim);}
+.nav-right{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:9px;color:var(--dim);}
 .led{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);display:inline-block;}
+.metric{background:var(--bg3);padding:2px 8px;font-size:9px;}
 .layout{flex:1;display:flex;overflow:hidden;}
 .sidebar{width:210px;background:var(--bg1);border-right:1px solid var(--line);display:flex;flex-direction:column;overflow-y:auto;flex-shrink:0;}
 .main{flex:1;overflow-y:auto;padding:16px;}
 .sb-sec{padding:10px 12px 4px;font-size:9px;color:var(--dim);letter-spacing:2px;}
-.sb-item{padding:7px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;border-left:2px solid transparent;}
+.sb-item{padding:7px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;}
 .sb-item:hover{background:var(--bg2);}
 .sb-dot{width:6px;height:6px;border-radius:50%;background:var(--dim);flex-shrink:0;}
 .sb-dot.on{background:var(--green);box-shadow:0 0 4px var(--green);}
@@ -37,17 +38,16 @@ body{background:var(--bg0);color:var(--white);font-family:var(--mono);font-size:
 .stat-box{background:var(--bg1);border:1px solid var(--line);padding:10px 16px;min-width:100px;}
 .stat-v{font-size:20px;color:var(--amber);font-weight:700;}
 .stat-k{font-size:9px;color:var(--dim);letter-spacing:1.5px;margin-top:2px;}
-.comp-card{background:var(--bg1);border:1px solid var(--line);margin-bottom:12px;}
-.comp-card.running{border-color:rgba(0,255,136,.2);}
-.comp-card.error{border-color:rgba(255,68,102,.2);}
-.comp-head{padding:11px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
-.comp-name{flex:1;font-size:12px;letter-spacing:1px;}
-.comp-body{padding:12px 14px;}
+.card{background:var(--bg1);border:1px solid var(--line);margin-bottom:12px;}
+.card.running{border-color:rgba(0,255,136,.2);}
+.card.error{border-color:rgba(255,68,102,.2);}
+.card-head{padding:11px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+.card-name{flex:1;font-size:12px;letter-spacing:1px;}
+.card-body{padding:12px 14px;}
 .badge{font-size:8px;padding:2px 7px;letter-spacing:1.5px;}
 .badge-run{background:rgba(0,255,136,.12);color:var(--green);border:1px solid rgba(0,255,136,.25);}
 .badge-stop{background:var(--bg3);color:var(--dim);border:1px solid var(--line);}
 .badge-err{background:rgba(255,68,102,.12);color:var(--red);border:1px solid rgba(255,68,102,.25);}
-.badge-warn{background:rgba(232,168,48,.12);color:var(--amber);border:1px solid rgba(232,168,48,.25);}
 .btn{background:var(--bg3);border:1px solid var(--line);color:var(--white);padding:5px 12px;cursor:pointer;font-family:var(--mono);font-size:10px;letter-spacing:1px;}
 .btn:hover{border-color:var(--amber);color:var(--amber);}
 .btn-g{border-color:rgba(0,255,136,.3);color:var(--green);}
@@ -68,23 +68,32 @@ body{background:var(--bg0);color:var(--white);font-family:var(--mono);font-size:
 .rtmp-bar{background:var(--bg2);border:1px solid rgba(0,255,136,.15);padding:8px 12px;margin-top:6px;}
 .rtmp-row{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--line);}
 .rtmp-row:last-child{border:none;}
-.rtmp-name{min-width:100px;color:var(--amber);font-size:10px;}
-.log-box{height:120px;overflow-y:auto;background:var(--bg0);border:1px solid var(--line);padding:8px;font-size:10px;line-height:1.7;margin-top:8px;}
+.log-box{height:110px;overflow-y:auto;background:var(--bg0);border:1px solid var(--line);padding:8px;font-size:10px;line-height:1.7;margin-top:8px;}
 .log-box .li{color:var(--muted);}
 .log-box .le{color:var(--red);}
 .log-box .ls{color:var(--green);}
-.preview-wrap{background:var(--bg0);border:1px solid var(--line);aspect-ratio:16/9;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-top:8px;max-height:280px;}
+.log-box .lw{color:var(--amber);}
+.src-list{margin:8px 0;}
+.src-item{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg2);border:1px solid var(--line);margin-bottom:4px;}
+.src-dot{width:8px;height:8px;border-radius:50%;background:var(--dim);flex-shrink:0;}
+.src-dot.ready{background:var(--green);box-shadow:0 0 5px var(--green);}
+.src-dot.fail{background:var(--red);}
+.src-dot.extracting{background:var(--amber);animation:pulse 1s infinite;}
+.src-dot.active{background:var(--blue);box-shadow:0 0 8px var(--blue);}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.src-name{flex:1;font-size:10px;}
+.src-status{font-size:9px;color:var(--dim);}
+.preview-wrap{background:var(--bg0);border:1px solid var(--line);aspect-ratio:16/9;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-top:8px;max-height:260px;}
 .preview-wrap video{width:100%;height:100%;object-fit:contain;}
-.preview-led{position:absolute;top:6px;right:8px;display:flex;align-items:center;gap:5px;background:rgba(0,0,0,.7);padding:3px 8px;font-size:9px;color:var(--dim);}
+.preview-led{position:absolute;top:6px;right:8px;display:flex;align-items:center;gap:5px;background:rgba(0,0,0,.7);padding:3px 8px;font-size:9px;}
 .prev-dot{width:6px;height:6px;border-radius:50%;background:var(--dim);}
-.prev-dot.on{background:var(--green);animation:blink 1.2s infinite;}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.prev-dot.on{background:var(--green);animation:pulse 1.2s infinite;}
 .out-table{width:100%;border-collapse:collapse;}
-.out-table th{text-align:left;padding:6px 10px;font-size:9px;color:var(--dim);letter-spacing:1.5px;border-bottom:1px solid var(--line);}
+.out-table th{text-align:left;padding:6px 10px;font-size:9px;color:var(--dim);border-bottom:1px solid var(--line);}
 .out-table td{padding:7px 10px;border-bottom:1px solid var(--line);color:var(--muted);font-size:10px;}
-.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:100;align-items:center;justify-content:center;}
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:100;align-items:center;justify-content:center;}
 .overlay.open{display:flex;}
-.modal{background:var(--bg1);border:1px solid var(--line);width:460px;max-width:95vw;max-height:90vh;overflow-y:auto;}
+.modal{background:var(--bg1);border:1px solid var(--line);width:480px;max-width:95vw;max-height:90vh;overflow-y:auto;}
 .mh{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;}
 .mh-title{flex:1;font-size:11px;letter-spacing:2px;color:var(--amber);}
 .mh-close{background:none;border:none;color:var(--dim);cursor:pointer;font-size:14px;font-family:var(--mono);}
@@ -97,6 +106,7 @@ body{background:var(--bg0);color:var(--white);font-family:var(--mono);font-size:
 .fi:focus{outline:none;border-color:var(--amber);}
 select.fi{cursor:pointer;}
 .divl{height:1px;background:var(--line);margin:10px 0;}
+.src-edit-item{padding:10px;background:var(--bg2);border:1px solid var(--line);margin-bottom:6px;}
 .win-sel-item{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--line);margin-bottom:5px;cursor:pointer;}
 .win-sel-item:hover{border-color:var(--amber);}
 .win-sel-item.sel{border-color:var(--green);background:rgba(0,255,136,.05);}
@@ -104,29 +114,38 @@ select.fi{cursor:pointer;}
 #toast{position:fixed;bottom:20px;right:20px;z-index:999;display:flex;flex-direction:column;gap:6px;}
 .ti{padding:8px 14px;font-size:10px;letter-spacing:1px;border-left:3px solid var(--amber);background:var(--bg2);}
 .ti.ok{border-color:var(--green);}.ti.err{border-color:var(--red);}.ti.inf{border-color:var(--blue);}
-.ck-card{background:var(--bg1);border:1px solid var(--line);padding:16px;margin-bottom:12px;}
 .ck-status{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--bg3);border:1px solid var(--line);margin-bottom:14px;}
-.ck-led{width:14px;height:14px;border-radius:50%;background:var(--dim);flex-shrink:0;transition:all .3s;}
+.ck-led{width:14px;height:14px;border-radius:50%;background:var(--dim);flex-shrink:0;}
 .ck-led.on{background:var(--green);box-shadow:0 0 10px var(--green);}
 .ck-led.master{background:var(--amber);box-shadow:0 0 10px var(--amber);}
 .ck-comp-row{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--line);margin-bottom:5px;background:var(--bg2);}
-.master-banner{background:rgba(232,168,48,.08);border:1px solid rgba(232,168,48,.3);padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;font-size:10px;color:var(--amber);}
+.master-banner{background:rgba(232,168,48,.08);border:1px solid rgba(232,168,48,.3);padding:10px 14px;margin-bottom:12px;font-size:10px;color:var(--amber);}
+.hint{font-size:9px;color:var(--dim);margin-top:3px;line-height:1.6;}
 </style>
 </head>
 <body>
 <div class="nav">
   <div class="nav-logo">NEXUS<span>v4</span></div>
   <div class="nav-item active" onclick="showPage('computers',this)">COMPUTADORAS</div>
-  <div class="nav-item" onclick="showPage('outputs',this)">SALIDAS RTMP</div>
-  <div class="nav-item" onclick="showPage('cookies',this)">COOKIES</div>
-  <div class="nav-right"><div class="led"></div><span id="masterBadge" style="display:none;color:var(--amber);font-size:9px;letter-spacing:1px;">⭐ MASTER ACTIVO</span></div>
+  <div class="nav-item" onclick="showPage('streams',this)">STREAMS</div>
+  <div class="nav-item" onclick="showPage('outputs',this)">SALIDAS</div>
+  <div class="nav-item" onclick="showPage('cookies',this)">SESION</div>
+  <div class="nav-right">
+    <span class="metric">CPU <span id="mCpu">--</span>%</span>
+    <span class="metric">RAM <span id="mRam">--</span>%</span>
+    <span id="masterBadge" style="display:none;color:var(--amber)">⭐ MASTER</span>
+    <div class="led"></div>
+  </div>
 </div>
 <div class="layout">
   <div class="sidebar">
     <div class="sb-sec">COMPUTADORAS</div>
     <div id="sbComp"></div>
     <div class="sb-add" onclick="openM('mComp')">+ NUEVA</div>
-    <div class="sb-sec">SALIDAS RTMP</div>
+    <div class="sb-sec">STREAMS</div>
+    <div id="sbStream"></div>
+    <div class="sb-add" onclick="openM('mStream')">+ NUEVO</div>
+    <div class="sb-sec">SALIDAS</div>
     <div id="sbOut"></div>
     <div class="sb-add" onclick="openM('mOut')">+ NUEVA</div>
     <div class="sb-sec">SESION</div>
@@ -137,22 +156,35 @@ select.fi{cursor:pointer;}
   </div>
   <div class="main">
 
+    <!-- COMPUTADORAS -->
     <div class="page active" id="pageComputers">
       <div class="ph"><div class="ph-title">COMPUTADORAS</div><div class="ph-line"></div><button class="btn btn-a btn-s" onclick="openM('mComp')">+ NUEVA</button></div>
       <div class="stat-row">
         <div class="stat-box"><div class="stat-v" id="stA">0</div><div class="stat-k">ACTIVAS</div></div>
-        <div class="stat-box"><div class="stat-v" id="stMax">30</div><div class="stat-k">MAXIMO</div></div>
-        <div class="stat-box"><div class="stat-v" id="stR">0</div><div class="stat-k">STREAMS</div></div>
+        <div class="stat-box"><div class="stat-v" id="stS">0</div><div class="stat-k">STREAMS</div></div>
+        <div class="stat-box"><div class="stat-v" id="stR">0</div><div class="stat-k">RTMP VIVOS</div></div>
       </div>
       <div id="masterInfoBar"></div>
       <div id="compList"><div class="empty">SIN COMPUTADORAS</div></div>
     </div>
 
+    <!-- STREAMS -->
+    <div class="page" id="pageStreams">
+      <div class="ph"><div class="ph-title">STREAMS DIRECTOS</div><div class="ph-line"></div><button class="btn btn-a btn-s" onclick="openM('mStream')">+ NUEVO</button></div>
+      <div style="background:var(--bg3);border:1px solid var(--line);padding:12px 16px;margin-bottom:14px;font-size:9px;color:var(--muted);line-height:2;">
+        <span style="color:var(--amber)">SIN FIREFOX</span> — Extrae M3U8 via curl o Playwright y retransmite directo.<br>
+        Multiples fuentes con <span style="color:var(--white)">failover automatico</span> y switch manual entre fuentes.
+      </div>
+      <div id="streamList"><div class="empty">SIN STREAMS</div></div>
+    </div>
+
+    <!-- SALIDAS -->
     <div class="page" id="pageOutputs">
       <div class="ph"><div class="ph-title">SALIDAS RTMP</div><div class="ph-line"></div><button class="btn btn-a btn-s" onclick="openM('mOut')">+ NUEVA</button></div>
       <div id="outList"><div class="empty">SIN SALIDAS</div></div>
     </div>
 
+    <!-- SESION -->
     <div class="page" id="pageCookies">
       <div class="ph"><div class="ph-title">SESION MAESTRA</div><div class="ph-line"></div></div>
       <div class="ck-status">
@@ -166,19 +198,13 @@ select.fi{cursor:pointer;}
           <button class="btn btn-s" onclick="loadCookieStatus()">&#8635;</button>
         </div>
       </div>
-
-      <div class="ck-card" style="background:var(--bg3);font-size:9px;color:var(--muted);line-height:2.6;margin-bottom:14px;">
-        <div style="color:var(--amber);font-size:10px;letter-spacing:2px;margin-bottom:8px;">&#11088; FLUJO RECOMENDADO</div>
-        <span style="color:var(--white)">1.</span> Crea una computadora y enciendela<br>
-        <span style="color:var(--white)">2.</span> Entra por VNC — instala extension Surfshark y loguea<br>
-        <span style="color:var(--white)">3.</span> Loguea en Netflix (o el sitio que uses)<br>
-        <span style="color:var(--white)">4.</span> Presiona <span style="color:var(--amber)">&#11088; SET MASTER</span> en esa computadora<br>
-        <span style="color:var(--white)">5.</span> Todas las computadoras nuevas arrancan ya logeadas<br>
-        <span style="color:var(--white)">6.</span> Solo entras por VNC y cambias ubicacion en Surfshark<br>
-        <span style="color:var(--dim)">Sincronizacion automatica de cookies cada 30 segundos</span>
+      <div style="background:var(--bg3);border:1px solid var(--line);padding:12px 16px;margin-bottom:14px;font-size:9px;color:var(--muted);line-height:2.4;">
+        <div style="color:var(--amber);font-size:10px;margin-bottom:6px;">&#11088; FLUJO</div>
+        <span style="color:var(--white)">1.</span> Enciende una computadora → entra por VNC → loguea<br>
+        <span style="color:var(--white)">2.</span> Presiona <span style="color:var(--amber)">⭐ SET MASTER</span><br>
+        <span style="color:var(--white)">3.</span> Nuevas computadoras arrancan ya logeadas
       </div>
-
-      <div class="ck-card">
+      <div style="background:var(--bg1);border:1px solid var(--line);padding:16px;">
         <div style="font-size:9px;color:var(--dim);letter-spacing:2px;margin-bottom:10px;">COMPUTADORAS ACTIVAS</div>
         <div id="ckCompList"><div class="empty">Sin computadoras activas</div></div>
       </div>
@@ -187,18 +213,40 @@ select.fi{cursor:pointer;}
   </div>
 </div>
 
-<!-- MODALES -->
+<!-- MODAL NUEVA COMPUTADORA -->
 <div class="overlay" id="mComp">
   <div class="modal">
     <div class="mh"><span class="mh-title">NUEVA COMPUTADORA</span><button class="mh-close" onclick="closeM('mComp')">&#x2715;</button></div>
     <div class="mb">
       <div class="fg"><label class="fl">NOMBRE</label><input class="fi" id="cName" placeholder="PC 1"></div>
-      <div class="fg"><label class="fl">URL DE INICIO (opcional)</label><input class="fi" id="cUrl" placeholder="https://www.netflix.com"></div>
+      <div class="fg"><label class="fl">URL DE INICIO</label><input class="fi" id="cUrl" placeholder="https://..."></div>
     </div>
     <div class="mf"><button class="btn" onclick="closeM('mComp')">CANCELAR</button><button class="btn btn-a" onclick="createComputer()">CREAR</button></div>
   </div>
 </div>
 
+<!-- MODAL NUEVO STREAM -->
+<div class="overlay" id="mStream">
+  <div class="modal" style="width:560px">
+    <div class="mh"><span class="mh-title">NUEVO STREAM</span><button class="mh-close" onclick="closeM('mStream')">&#x2715;</button></div>
+    <div class="mb">
+      <div class="fg"><label class="fl">NOMBRE DEL STREAM</label><input class="fi" id="stName" placeholder="ESPN"></div>
+      <div class="divl"></div>
+      <div style="font-size:9px;color:var(--amber);letter-spacing:2px;margin-bottom:10px;">FUENTES</div>
+      <div id="stSrcs"></div>
+      <button class="btn btn-s" onclick="addSrcRow()" style="margin-bottom:10px;">+ AGREGAR FUENTE</button>
+      <div class="divl"></div>
+      <div style="font-size:9px;color:var(--amber);letter-spacing:2px;margin-bottom:10px;">SALIDA RTMP</div>
+      <div class="fg2">
+        <div class="fg"><label class="fl">SALIDA</label><select class="fi" id="stOut"></select></div>
+        <div class="fg"><label class="fl">BITRATE (o "copy")</label><input class="fi" id="stBitrate" placeholder="copy" value="copy"></div>
+      </div>
+    </div>
+    <div class="mf"><button class="btn" onclick="closeM('mStream')">CANCELAR</button><button class="btn btn-a" onclick="createStream()">CREAR</button></div>
+  </div>
+</div>
+
+<!-- MODAL NUEVA SALIDA -->
 <div class="overlay" id="mOut">
   <div class="modal">
     <div class="mh"><span class="mh-title">NUEVA SALIDA RTMP</span><button class="mh-close" onclick="closeM('mOut')">&#x2715;</button></div>
@@ -218,6 +266,7 @@ select.fi{cursor:pointer;}
   </div>
 </div>
 
+<!-- MODAL ABRIR URL -->
 <div class="overlay" id="mWin">
   <div class="modal">
     <div class="mh"><span class="mh-title">ABRIR URL</span><button class="mh-close" onclick="closeM('mWin')">&#x2715;</button></div>
@@ -226,13 +275,14 @@ select.fi{cursor:pointer;}
   </div>
 </div>
 
+<!-- MODAL RTMP -->
 <div class="overlay" id="mRtmp">
   <div class="modal" style="width:500px">
     <div class="mh"><span class="mh-title">INICIAR STREAM</span><button class="mh-close" onclick="closeM('mRtmp')">&#x2715;</button></div>
     <div class="mb">
       <div class="fg"><label class="fl">SALIDA RTMP</label><select class="fi" id="rtmpOut"></select></div>
       <div class="divl"></div>
-      <div style="font-size:9px;color:var(--dim);letter-spacing:1.5px;margin-bottom:8px">VENTANA A CAPTURAR (opcional)</div>
+      <div style="font-size:9px;color:var(--dim);margin-bottom:8px">VENTANA (opcional)</div>
       <div class="row" style="margin-bottom:8px">
         <button class="btn btn-s" onclick="refreshWins()">ACTUALIZAR</button>
         <button class="btn btn-b btn-s" onclick="selFullScreen()">PANTALLA COMPLETA</button>
@@ -248,13 +298,21 @@ select.fi{cursor:pointer;}
 <div id="toast"></div>
 
 <script>
-var S={computers:[],outputs:[]};
+var S={computers:[],outputs:[],streams:[]};
 var _rCid=null,_rWin=null,_wCid=null,_hls={};
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function api(m,u,b){return fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined}).then(function(r){return r.json();}).catch(function(){return null;});}
 function toast(msg,t){var e=document.createElement('div');e.className='ti '+(t||'');e.textContent=msg;document.getElementById('toast').appendChild(e);setTimeout(function(){e.remove();},3500);}
-function openM(id){document.getElementById(id).classList.add('open');}
+function openM(id){
+  if(id==='mStream'){
+    var sel=document.getElementById('stOut');
+    sel.innerHTML='<option value="">-- Seleccionar --</option>';
+    S.outputs.forEach(function(o){sel.add(new Option(o.name,o.id));});
+    if(!document.querySelectorAll('#stSrcs .src-edit-item').length) addSrcRow();
+  }
+  document.getElementById(id).classList.add('open');
+}
 function closeM(id){document.getElementById(id).classList.remove('open');}
 
 function showPage(n,el){
@@ -266,26 +324,37 @@ function showPage(n,el){
   if(n==='cookies') loadCookieStatus();
 }
 
-function dotCls(s){return s==='running'?'sb-dot on':s==='error'?'sb-dot err':s==='stopping'?'sb-dot warn':'sb-dot';}
-function badgeCls(s){return s==='running'?'badge badge-run':s==='error'?'badge badge-err':s==='stopping'?'badge badge-warn':'badge badge-stop';}
-
 function loadAll(){
-  Promise.all([api('GET','/api/computers'),api('GET','/api/outputs')]).then(function(r){
+  Promise.all([
+    api('GET','/api/computers'),
+    api('GET','/api/outputs'),
+    api('GET','/api/streams')
+  ]).then(function(r){
     if(r[0]) S.computers=r[0];
     if(r[1]) S.outputs=r[1];
+    if(r[2]) S.streams=r[2];
     render();
   });
 }
 
 function render(){
-  renderSidebar();renderComputers();renderOutputs();renderCookieComputers();
+  renderSidebar();renderComputers();renderStreams();renderOutputs();renderCookieComputers();
   document.getElementById('stA').textContent=S.computers.filter(function(c){return c.status==='running';}).length;
+  document.getElementById('stS').textContent=S.streams.filter(function(s){return s.status==='running';}).length;
   document.getElementById('stR').textContent=S.computers.reduce(function(n,c){return n+(c.active_rtmp||[]).length;},0);
 }
 
 function renderSidebar(){
-  document.getElementById('sbComp').innerHTML=S.computers.map(function(c){return '<div class="sb-item"><div class="'+dotCls(c.status)+'"></div><div class="sb-label">'+esc(c.name)+'</div></div>';}).join('');
-  document.getElementById('sbOut').innerHTML=S.outputs.map(function(o){return '<div class="sb-item"><div class="sb-dot"></div><div class="sb-label">'+esc(o.name)+'</div></div>';}).join('');
+  document.getElementById('sbComp').innerHTML=S.computers.map(function(c){
+    var dot=c.status==='running'?'on':c.status==='error'?'err':'';
+    return '<div class="sb-item"><div class="sb-dot '+dot+'"></div><div class="sb-label">'+esc(c.name)+'</div></div>';
+  }).join('');
+  document.getElementById('sbStream').innerHTML=S.streams.map(function(s){
+    return '<div class="sb-item"><div class="sb-dot '+(s.status==='running'?'on':'')+'"></div><div class="sb-label">'+esc(s.name)+'</div></div>';
+  }).join('');
+  document.getElementById('sbOut').innerHTML=S.outputs.map(function(o){
+    return '<div class="sb-item"><div class="sb-dot"></div><div class="sb-label">'+esc(o.name)+'</div></div>';
+  }).join('');
 }
 
 function renderComputers(){
@@ -300,14 +369,13 @@ function renderComputers(){
       wH='<div style="font-size:9px;color:var(--dim);letter-spacing:1.5px;margin:10px 0 4px">PESTANAS</div>';
       if(wins.length){
         wH+='<div class="win-list">'+wins.map(function(w){
-          var wid=w.wid||'';
           return '<div class="win-item">'+
           '<div class="win-id">'+esc(w.win_id)+'</div>'+
           '<div class="win-title">'+esc(w.title||w.url||'-')+'</div>'+
           '<div style="display:flex;gap:4px">'+
           '<button class="btn btn-b btn-xs" onclick="focusWin(\''+esc(c.id)+'\',\''+esc(w.win_id)+'\')">VNC</button>'+
           '<button class="btn btn-a btn-xs" onclick="quickRtmp(\''+esc(c.id)+'\',\''+esc(w.win_id)+'\',\''+esc(w.title)+'\')">RTMP</button>'+
-          '<button class="btn btn-r btn-xs" onclick="closeWin(\''+esc(c.id)+'\',\''+esc(wid)+'\')">X</button>'+
+          '<button class="btn btn-r btn-xs" onclick="closeWin(\''+esc(c.id)+'\',\''+esc(w.wid||'')+'\')">X</button>'+
           '</div></div>';
         }).join('')+'</div>';
       } else {
@@ -316,26 +384,26 @@ function renderComputers(){
     }
     var rH='';
     if(ar.length){
-      rH='<div class="rtmp-bar"><div style="font-size:9px;color:var(--dim);letter-spacing:1.5px;margin-bottom:5px">STREAMS ACTIVOS</div>'+
-      ar.map(function(oid){
+      rH='<div class="rtmp-bar">'+ar.map(function(oid){
         var out=S.outputs.find(function(o){return o.id===oid;});
-        return '<div class="rtmp-row"><div class="rtmp-name">'+esc(out?out.name:oid)+'</div><div style="color:var(--green);font-size:9px">&#9679; EN VIVO</div><button class="btn btn-r btn-xs" onclick="stopRtmp(\''+esc(c.id)+'\',\''+esc(oid)+'\')">STOP</button></div>';
+        return '<div class="rtmp-row"><div style="flex:1;color:var(--amber);font-size:10px">'+esc(out?out.name:oid)+'</div><div style="color:var(--green);font-size:9px">&#9679; EN VIVO</div><button class="btn btn-r btn-xs" onclick="stopRtmp(\''+esc(c.id)+'\',\''+esc(oid)+'\')">STOP</button></div>';
       }).join('')+'</div>';
     }
     var logs=(c.logs||[]).slice(-10);
     var lH='<div class="log-box" id="lb-'+c.id+'">'+logs.map(function(l){
-      var cls=l.indexOf('error')>=0||l.indexOf('Error')>=0?'le':l.indexOf('listo')>=0||l.indexOf('lista')>=0||l.indexOf('Computadora')>=0||l.indexOf('clonado')>=0?'ls':'li';
+      var cls=l.indexOf('error')>=0||l.indexOf('Error')>=0?'le':l.indexOf('listo')>=0||l.indexOf('clonado')>=0?'ls':'li';
       return '<div class="'+cls+'">'+esc(l)+'</div>';
     }).join('')+'</div>';
     var pH='';
     if(running&&c.hls_active){
       pH='<div class="preview-wrap"><video id="vid-'+c.id+'" autoplay muted playsinline></video><div class="preview-led"><div class="prev-dot" id="pd-'+c.id+'"></div><span id="pl-'+c.id+'">--</span></div></div>';
     }
-    return '<div class="comp-card '+c.status+'" id="cc-'+c.id+'">'+
-      '<div class="comp-head">'+
-      '<div class="'+dotCls(c.status)+'"></div>'+
-      '<div class="comp-name">'+esc(c.name)+'</div>'+
-      '<span class="'+badgeCls(c.status)+'">'+c.status.toUpperCase()+'</span>'+
+    var badgeCls=c.status==='running'?'badge-run':c.status==='error'?'badge-err':'badge-stop';
+    return '<div class="card '+c.status+'">'+
+      '<div class="card-head">'+
+      '<div class="sb-dot '+(c.status==='running'?'on':c.status==='error'?'err':'')+'"></div>'+
+      '<div class="card-name">'+esc(c.name)+'</div>'+
+      '<span class="badge '+badgeCls+'">'+c.status.toUpperCase()+'</span>'+
       '<div class="row" style="margin-left:8px">'+
       (!running?'<button class="btn btn-g btn-s" onclick="startComp(\''+esc(c.id)+'\')">ENCENDER</button>':'')+
       (running?'<button class="btn btn-r btn-s" onclick="stopComp(\''+esc(c.id)+'\')">APAGAR</button>':'')+
@@ -343,12 +411,11 @@ function renderComputers(){
       (running?'<button class="btn btn-s" onclick="openWinModal(\''+esc(c.id)+'\')">+ URL</button>':'')+
       (running?'<button class="btn btn-a btn-s" onclick="openRtmpModal(\''+esc(c.id)+'\')">+ STREAM</button>':'')+
       (running&&!c.hls_active?'<button class="btn btn-s" onclick="startHls(\''+esc(c.id)+'\')">PREVIEW</button>':'')+
-      (running&&c.hls_active?'<button class="btn btn-r btn-s" onclick="stopHls(\''+esc(c.id)+'\')">STOP PREVIEW</button>':'')+
-      (running?'<button class="btn btn-a btn-s" onclick="setMaster(\''+esc(c.id)+'\',\''+esc(c.name)+'\')" title="Clonar perfil completo como master para todas las demas computadoras">&#11088; SET MASTER</button>':'')+
-      (running?'<button class="btn btn-b btn-xs" onclick="saveCookiesFrom(\''+esc(c.id)+'\')" title="Solo guardar cookies">&#128194; COOKIES</button>':'')+
+      (running&&c.hls_active?'<button class="btn btn-r btn-s" onclick="stopHls(\''+esc(c.id)+'\')">STOP PREV</button>':'')+
+      (running?'<button class="btn btn-a btn-s" onclick="setMaster(\''+esc(c.id)+'\',\''+esc(c.name)+'\')">&#11088; SET MASTER</button>':'')+
       '<button class="btn btn-r btn-xs" onclick="delComp(\''+esc(c.id)+'\')">&#10005;</button>'+
       '</div></div>'+
-      '<div class="comp-body">'+wH+rH+pH+lH+'</div></div>';
+      '<div class="card-body">'+wH+rH+pH+lH+'</div></div>';
   }).join('');
   S.computers.forEach(function(c){
     if(c.status==='running'&&c.hls_active) setTimeout(function(){initHls(c.id);},300);
@@ -356,6 +423,96 @@ function renderComputers(){
     if(lb) lb.scrollTop=lb.scrollHeight;
   });
 }
+
+function renderStreams(){
+  var list=document.getElementById('streamList');
+  if(!S.streams.length){list.innerHTML='<div class="empty">SIN STREAMS</div>';return;}
+  list.innerHTML=S.streams.map(function(s){
+    var running=s.status==='running';
+    var srcH='';
+    if(s.sources&&s.sources.length){
+      srcH='<div style="font-size:9px;color:var(--dim);letter-spacing:1.5px;margin:8px 0 4px">FUENTES</div><div class="src-list">';
+      s.sources.forEach(function(src,i){
+        var st=s.source_status&&s.source_status[i]||'stopped';
+        var isActive=s.current_source_idx===i;
+        var dotCls=isActive?'active':st==='ready'?'ready':st==='fail'?'fail':st==='extracting'?'extracting':'';
+        var stLabel=isActive?'EN USO':st==='ready'?'lista':st==='fail'?'fallo':st==='extracting'?'extrayendo':'parado';
+        srcH+='<div class="src-item">'+
+          '<div class="src-dot '+dotCls+'"></div>'+
+          '<div class="src-name">'+esc(src.name||'Fuente '+(i+1))+'</div>'+
+          '<div style="font-size:9px;color:var(--dim);margin-right:6px">'+esc(src.method||'curl')+'</div>'+
+          '<div class="src-status">'+stLabel+'</div>'+
+          (running&&st==='ready'&&!isActive?'<button class="btn btn-b btn-xs" onclick="switchSource(\''+esc(s.id)+'\','+i+')">USAR</button>':'')+
+          '</div>';
+      });
+      srcH+='</div>';
+    }
+    var logs=(s.logs||[]).slice(-8);
+    var lH='<div class="log-box" id="slb-'+s.id+'">'+logs.map(function(l){
+      var cls=l.indexOf('[WARN')>=0||l.indexOf('Caido')>=0?'lw':l.indexOf('[STREAM')>=0||l.indexOf('[OK')>=0?'ls':l.indexOf('ERROR')>=0?'le':'li';
+      return '<div class="'+cls+'">'+esc(l)+'</div>';
+    }).join('')+'</div>';
+    return '<div class="card '+(running?'running':'')+'">'+
+      '<div class="card-head">'+
+      '<div class="sb-dot '+(running?'on':'')+'"></div>'+
+      '<div class="card-name">'+esc(s.name)+'</div>'+
+      '<span class="badge '+(running?'badge-run':'badge-stop')+'">'+(running?'EN VIVO':'DETENIDO')+'</span>'+
+      (running&&s.current_source?'<span style="font-size:9px;color:var(--blue);margin-left:6px">→ '+esc(s.current_source)+'</span>':'')+
+      '<div class="row" style="margin-left:8px">'+
+      (!running?'<button class="btn btn-g btn-s" onclick="startStream(\''+esc(s.id)+'\')">INICIAR</button>':'')+
+      (running?'<button class="btn btn-r btn-s" onclick="stopStream(\''+esc(s.id)+'\')">DETENER</button>':'')+
+      '<button class="btn btn-r btn-xs" onclick="delStream(\''+esc(s.id)+'\')">&#10005;</button>'+
+      '</div></div>'+
+      '<div class="card-body">'+srcH+lH+'</div></div>';
+  }).join('');
+  S.streams.forEach(function(s){
+    var lb=document.getElementById('slb-'+s.id);
+    if(lb) lb.scrollTop=lb.scrollHeight;
+  });
+}
+
+function addSrcRow(){
+  var c=document.getElementById('stSrcs');
+  var i=c.children.length;
+  var d=document.createElement('div');
+  d.className='src-edit-item';
+  d.innerHTML=
+    '<div class="fg2" style="margin-bottom:6px">'+
+    '<div class="fg"><label class="fl">NOMBRE FUENTE</label><input class="fi src-name" placeholder="Fuente '+(i+1)+'"></div>'+
+    '<div class="fg"><label class="fl">METODO</label><select class="fi src-method"><option value="curl">curl</option><option value="playwright">playwright</option></select></div>'+
+    '</div>'+
+    '<div class="fg" style="margin-bottom:4px"><label class="fl">URL DE LA PAGINA</label><input class="fi src-url" placeholder="https://..."></div>'+
+    '<div style="display:flex;justify-content:flex-end"><button class="btn btn-r btn-xs" onclick="this.closest(\'.src-edit-item\').remove()">QUITAR</button></div>';
+  c.appendChild(d);
+}
+
+function createStream(){
+  var name=document.getElementById('stName').value.trim();
+  var oid=document.getElementById('stOut').value;
+  var bitrate=document.getElementById('stBitrate').value.trim()||'copy';
+  if(!name) return toast('Nombre requerido','err');
+  if(!oid) return toast('Selecciona una salida','err');
+  var out=S.outputs.find(function(o){return o.id===oid;});
+  if(!out) return toast('Salida no encontrada','err');
+  var sources=[];
+  document.querySelectorAll('#stSrcs .src-edit-item').forEach(function(row){
+    var u=row.querySelector('.src-url').value.trim();
+    var n=row.querySelector('.src-name').value.trim();
+    var m=row.querySelector('.src-method').value;
+    if(u) sources.push({name:n||u,url:u,method:m});
+  });
+  if(!sources.length) return toast('Agrega al menos una fuente','err');
+  var outputs=[{id:oid,rtmp:out.rtmp,key:out.key,bitrate:bitrate,name:out.name}];
+  api('POST','/api/streams',{name:name,sources:sources,outputs:outputs}).then(function(r){
+    if(r&&r.ok){toast('Stream creado','ok');closeM('mStream');document.getElementById('stName').value='';document.getElementById('stSrcs').innerHTML='';loadAll();}
+    else if(r) toast(r.error||'Error','err');
+  });
+}
+
+function startStream(sid){api('POST','/api/streams/'+sid+'/start').then(function(r){if(r&&r.ok)toast('Iniciando...','inf');else if(r)toast(r.error||'Error','err');});}
+function stopStream(sid){api('POST','/api/streams/'+sid+'/stop').then(function(r){if(r&&r.ok)toast('Detenido','ok');});}
+function delStream(sid){if(!confirm('Eliminar?'))return;api('DELETE','/api/streams/'+sid).then(function(r){if(r&&r.ok){toast('Eliminado','ok');loadAll();}});}
+function switchSource(sid,idx){api('POST','/api/streams/'+sid+'/switch',{idx:idx}).then(function(r){if(r&&r.ok)toast('Cambiando fuente...','inf');else if(r)toast(r.error||'No lista','err');});}
 
 function initHls(cid){
   var vid=document.getElementById('vid-'+cid);
@@ -390,7 +547,6 @@ function renderCookieComputers(){
     return '<div class="ck-comp-row">'+
     '<div class="sb-dot on"></div>'+
     '<div style="flex:1;font-size:10px">'+esc(c.name)+'</div>'+
-    '<div style="font-size:9px;color:var(--dim);margin-right:10px">Display :'+c.display_num+'</div>'+
     '<button class="btn btn-a btn-s" onclick="setMaster(\''+esc(c.id)+'\',\''+esc(c.name)+'\')">&#11088; SET MASTER</button>'+
     '<button class="btn btn-b btn-xs" onclick="saveCookiesFrom(\''+esc(c.id)+'\')">COOKIES</button>'+
     '</div>';
@@ -408,25 +564,25 @@ function loadCookieStatus(){
     var badge=document.getElementById('masterBadge');
     var bar=document.getElementById('masterInfoBar');
     if(r.has_master_profile){
-      if(led){led.className='ck-led master';}
+      if(led) led.className='ck-led master';
       if(tit){tit.style.color='var(--amber)';tit.textContent='⭐ MASTER PROFILE ACTIVO';}
-      if(inf) inf.textContent='Perfil completo (sesion+cookies+extensiones) — '+r.size_kb+' KB cookies — sync cada 30s';
+      if(inf) inf.textContent='Perfil completo activo — '+r.size_kb+' KB — sync cada 30s';
       if(dot) dot.className='sb-dot warn';
-      if(lbl) lbl.textContent='⭐ Master activo';
+      if(lbl) lbl.textContent='⭐ Master';
       if(badge) badge.style.display='inline';
-      if(bar) bar.innerHTML='<div class="master-banner">&#11088; MASTER PROFILE ACTIVO — Las nuevas computadoras arrancan ya logeadas con la sesion guardada</div>';
+      if(bar) bar.innerHTML='<div class="master-banner">&#11088; MASTER PROFILE ACTIVO — Nuevas computadoras arrancan ya logeadas</div>';
     } else if(r.has_master){
       if(led) led.className='ck-led on';
-      if(tit){tit.style.color='var(--green)';tit.textContent='COOKIES MAESTRAS ACTIVAS';}
-      if(inf) inf.textContent='Solo cookies — '+r.size_kb+' KB — sync cada 30s';
+      if(tit){tit.style.color='var(--green)';tit.textContent='COOKIES ACTIVAS';}
+      if(inf) inf.textContent='Cookies: '+r.size_kb+' KB — sync cada 30s';
       if(dot) dot.className='sb-dot on';
-      if(lbl) lbl.textContent='Cookies ('+r.size_kb+' KB)';
+      if(lbl) lbl.textContent='Cookies';
       if(badge) badge.style.display='none';
       if(bar) bar.innerHTML='';
     } else {
       if(led) led.className='ck-led';
       if(tit){tit.style.color='var(--dim)';tit.textContent='SIN SESION MAESTRA';}
-      if(inf) inf.textContent='Loguea en una computadora y presiona ⭐ SET MASTER';
+      if(inf) inf.textContent='Loguea y presiona ⭐ SET MASTER';
       if(dot) dot.className='sb-dot';
       if(lbl) lbl.textContent='Sin master';
       if(badge) badge.style.display='none';
@@ -435,43 +591,34 @@ function loadCookieStatus(){
   });
 }
 
-function syncCookies(){
-  api('POST','/api/cookies/sync').then(function(r){
-    if(r&&r.ok){toast(r.msg,'ok');loadCookieStatus();}
-    else if(r) toast(r.error||'Error','err');
-  });
-}
-
+function syncCookies(){api('POST','/api/cookies/sync').then(function(r){if(r&&r.ok)toast(r.msg,'ok');});}
 function setMaster(cid,name){
-  if(!confirm('Usar "'+name+'" como MASTER?\n\nEsto clonara el perfil completo (sesion, cookies, extensiones Surfshark, Netflix, etc) y todas las computadoras nuevas que enciendas ya arrancaran logeadas.')) return;
+  if(!confirm('Usar "'+name+'" como MASTER?\nClona perfil completo para todas las computadoras nuevas.')) return;
   api('POST','/api/computers/'+cid+'/set_master').then(function(r){
     if(r&&r.ok){toast('⭐ '+r.msg,'ok');loadCookieStatus();}
     else if(r) toast(r.error||'Error','err');
   });
 }
-
 function saveCookiesFrom(cid){
-  if(!confirm('Guardar solo las cookies de esta computadora como maestras?')) return;
+  if(!confirm('Guardar cookies de esta computadora?')) return;
   api('POST','/api/cookies/save',{cid:cid}).then(function(r){
     if(r&&r.ok){toast(r.msg,'ok');loadCookieStatus();}
     else if(r) toast(r.error||'Error','err');
   });
 }
-
 function createComputer(){
   var n=document.getElementById('cName').value.trim();
   var u=document.getElementById('cUrl').value.trim();
   if(!n) return toast('Nombre requerido','err');
   api('POST','/api/computers',{name:n,start_url:u||'about:blank'}).then(function(r){
-    if(r&&r.ok){toast('Computadora creada','ok');closeM('mComp');document.getElementById('cName').value='';document.getElementById('cUrl').value='';loadAll();}
+    if(r&&r.ok){toast('Creada','ok');closeM('mComp');document.getElementById('cName').value='';document.getElementById('cUrl').value='';loadAll();}
     else if(r) toast(r.error||'Error','err');
   });
 }
-
 function startComp(cid){api('POST','/api/computers/'+cid+'/start').then(function(r){if(r&&r.ok)toast('Encendiendo...','inf');else if(r)toast(r.error||'Error','err');});}
 function stopComp(cid){if(!confirm('Apagar?'))return;api('POST','/api/computers/'+cid+'/stop').then(function(){toast('Apagando...','inf');});}
 function delComp(cid){if(!confirm('Eliminar?'))return;api('DELETE','/api/computers/'+cid).then(function(r){if(r&&r.ok){toast('Eliminada','ok');loadAll();}});}
-function openVNC(cid,p){if(!p)return toast('VNC no disponible','err');window.open('/vnc/vnc.html?host='+location.hostname+'&port='+p+'&encrypt=0&autoconnect=true&resize=scale&clipboard=1','vnc_'+cid,'width=1320,height=780,menubar=no,toolbar=no');}
+function openVNC(cid,p){if(!p)return toast('VNC no disponible','err');window.open('/vnc/vnc.html?host='+location.hostname+'&port=443&encrypt=1&path=ws/'+p+'/websockify&autoconnect=true&resize=scale','vnc_'+cid,'width=1320,height=780,menubar=no,toolbar=no');}
 function openWinModal(cid){_wCid=cid;document.getElementById('winUrl').value='';openM('mWin');}
 function confirmOpenWin(){
   var url=document.getElementById('winUrl').value.trim();
@@ -483,23 +630,22 @@ function confirmOpenWin(){
 }
 function focusWin(cid,winId){
   api('POST','/api/computers/'+cid+'/windows/'+winId+'/focus').then(function(r){
-    if(r&&r.ok) window.open('/vnc/vnc.html?host='+location.hostname+'&port='+r.ws_port+'&encrypt=0&autoconnect=true&resize=scale&clipboard=1','vnc_'+winId,'width=1320,height=780,menubar=no,toolbar=no');
-    else toast('Error al enfocar','err');
+    if(r&&r.ok) window.open('/vnc/vnc.html?host='+location.hostname+'&port=443&encrypt=1&path=ws/'+r.ws_port+'/websockify&autoconnect=true&resize=scale','vnc_'+winId,'width=1320,height=780,menubar=no,toolbar=no');
+    else toast('Error','err');
   });
 }
 function closeWin(cid,wid){
-  if(!wid||wid==='undefined')return toast('Sin ID, cierra desde VNC','err');
-  if(!confirm('Cerrar esta pestana?'))return;
+  if(!wid||wid==='undefined')return toast('Cierra desde VNC','err');
+  if(!confirm('Cerrar pestana?'))return;
   api('POST','/api/computers/'+cid+'/windows/'+wid+'/close').then(function(r){
-    if(r&&r.ok){toast('Pestana cerrada','ok');setTimeout(loadAll,500);}
-    else if(r) toast(r.error||'Error','err');
+    if(r&&r.ok){toast('Cerrada','ok');setTimeout(loadAll,500);}
   });
 }
 function openRtmpModal(cid){
   _rCid=cid;_rWin=null;
   document.getElementById('winSelLbl').textContent='Pantalla completa';
   var sel=document.getElementById('rtmpOut');
-  sel.innerHTML='<option value="">-- Seleccionar salida --</option>';
+  sel.innerHTML='<option value="">-- Seleccionar --</option>';
   S.outputs.forEach(function(o){sel.add(new Option(o.name,o.id));});
   openM('mRtmp');refreshWins();
 }
@@ -507,7 +653,7 @@ function quickRtmp(cid,winId,title){
   _rCid=cid;_rWin=winId;
   document.getElementById('winSelLbl').textContent=title||winId;
   var sel=document.getElementById('rtmpOut');
-  sel.innerHTML='<option value="">-- Seleccionar salida --</option>';
+  sel.innerHTML='<option value="">-- Seleccionar --</option>';
   S.outputs.forEach(function(o){sel.add(new Option(o.name,o.id));});
   openM('mRtmp');refreshWins();
   setTimeout(function(){document.querySelectorAll('.win-sel-item').forEach(function(e){e.classList.remove('sel');});var el=document.getElementById('wsi-'+winId);if(el)el.classList.add('sel');},800);
@@ -516,7 +662,7 @@ function refreshWins(){
   if(!_rCid)return;
   document.getElementById('winSelList').innerHTML='<div class="empty">Buscando...</div>';
   api('POST','/api/computers/'+_rCid+'/windows/refresh').then(function(wins){
-    if(!wins||!wins.length){document.getElementById('winSelList').innerHTML='<div class="empty">No hay ventanas abiertas</div>';return;}
+    if(!wins||!wins.length){document.getElementById('winSelList').innerHTML='<div class="empty">No hay ventanas</div>';return;}
     document.getElementById('winSelList').innerHTML=wins.map(function(w){
       return '<div class="win-sel-item" id="wsi-'+esc(w.id)+'" onclick="selWin(\''+esc(w.id)+'\',\''+esc(w.title)+'\')"><div style="font-size:9px;color:var(--dim);min-width:65px">'+esc(w.id)+'</div><div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(w.title||'-')+'</div><div style="font-size:9px;color:var(--dim)">'+w.w+'x'+w.h+'</div></div>';
     }).join('');
@@ -533,9 +679,9 @@ function confirmRtmp(){
     else if(r) toast(r.error||'Error','err');
   });
 }
-function stopRtmp(cid,oid){api('POST','/api/computers/'+cid+'/rtmp/stop',{output_id:oid}).then(function(r){if(r&&r.ok){toast('Stream detenido','ok');setTimeout(loadAll,500);}});}
+function stopRtmp(cid,oid){api('POST','/api/computers/'+cid+'/rtmp/stop',{output_id:oid}).then(function(r){if(r&&r.ok){toast('Detenido','ok');setTimeout(loadAll,500);}});}
 function startHls(cid){api('POST','/api/computers/'+cid+'/hls/start').then(function(r){if(r&&r.ok){toast('Preview iniciando...','inf');setTimeout(loadAll,2000);}});}
-function stopHls(cid){if(_hls[cid]){try{_hls[cid].destroy();}catch(e){} delete _hls[cid];}api('POST','/api/computers/'+cid+'/hls/stop').then(function(){toast('Preview detenido','ok');setTimeout(loadAll,500);});}
+function stopHls(cid){if(_hls[cid]){try{_hls[cid].destroy();}catch(e){} delete _hls[cid];}api('POST','/api/computers/'+cid+'/hls/stop').then(function(){toast('Detenido','ok');setTimeout(loadAll,500);});}
 function createOutput(){
   var n=document.getElementById('oName').value.trim();
   var r=document.getElementById('oRtmp').value.trim();
@@ -547,10 +693,21 @@ function createOutput(){
 }
 function delOut(oid){if(!confirm('Eliminar?'))return;api('DELETE','/api/outputs/'+oid).then(function(r){if(r&&r.ok){toast('Eliminada','ok');loadAll();}});}
 
+// Metricas
+function loadMetrics(){
+  api('GET','/api/metrics').then(function(r){
+    if(!r) return;
+    document.getElementById('mCpu').textContent=r.cpu||'--';
+    document.getElementById('mRam').textContent=r.ram_pct||'--';
+  });
+}
+
 loadAll();
-setInterval(loadAll,3000);
+setInterval(loadAll,5000);
 loadCookieStatus();
 setInterval(loadCookieStatus,15000);
+loadMetrics();
+setInterval(loadMetrics,10000);
 </script>
 </body>
 </html>
