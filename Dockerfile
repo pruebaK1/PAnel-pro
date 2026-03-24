@@ -16,11 +16,15 @@ RUN apt-get update && apt-get install -y \
     curl \
     wget \
     procps \
-    && pip install flask \
+    fonts-dejavu \
+    && pip install flask playwright \
+    && playwright install chromium \
+    && playwright install-deps chromium \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY . .
+RUN chmod +x /app/start.sh
 EXPOSE 8080
 CMD ["/app/start.sh"]
